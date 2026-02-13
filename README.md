@@ -1,13 +1,27 @@
-## HAX LLM REPL (POC)
+Implementation of the LLM repl, mostly inspired by https://github.com/sigoden/aichat, but designed to overcome a few issues with the UX/UI that I could not resolve, or that are treated as "won't fix" in the aichat repo. 
 
-Initial implementation of phases 0-2:
+The result is a much more personalized tool that made several design decisions in a different manner. It suits me, it might suit you, it might not. 
 
-- package skeleton and runtime boundary
-- strict pydantic domain models for sessions/messages
-- YAML session persistence and SQLite message storage
-- interactive REPL with prompt state header, query numbering, thinking spinner, streaming result rendering
+- [llm-functions is suboptimal #1355](https://github.com/sigoden/aichat/issues/1355)
+  - I spent about a day trying to understand how to add custom functions and if there is maybe a simpler way to do this than juggling half a dozen separate scripts and build components. Maybe I just missed something, but I did not see anything
+  - For hax-repl I'm explicitly focusing on making it easier to integrate **python** functions, agents and MCP implementations in the REPL, which fits my workflow better, even though it will mean the other extension function customization methods would be harder to use. 
+- [HIde thinking token #1215](https://github.com/sigoden/aichat/issues/1215)
+  - Some models, like `kimi2.5` can generate thousands of thinking tokens, and I don't care about them 99.9% of the time. Allegedly there is some way to hide the thinking tokens in the `aichat` -- according to the reply in the issue, but I haven't found any. 
+  - For hax-repl I hide the thinking tokens by default. 
+- https://github.com/sigoden/aichat/issues/88
+  - https://github.com/sigoden/aichat/pull/162 marked the feature request as resolved, but did not implement the actually useful, instead writing "Editing the session files directly is a faster and more efficient way to edit sessions. So aichat don't provide commands like `.session delete` or `.session edit`." which I also don't understand as the yaml files are not saved by default, and when they are saved and I want to delete the last request and response I have to (1) close the session, (2) open the yaml file, (3) delete the incorrect part, (4) re-start the session again and continue the conversation. 
+  - for hax-repl the set of commands for editing and interacting with messages is more expansive. 
 
-### Run
+Some features can be resolved/configured in the aichat proper, but are not defaults. For the hax-repl I choose a different set of defaults:
+
+- I add the aichat configuration to dotbot, so the default placement for the session location is `~/.local/state`. AIchat session state is stored in the `~/.config`
+- Sessions are not named and saved by default -- fixable with `--save-session` and `--session (date -Is)`, but it should be a default behavior IMO
+
+Some features that are explicitly left out and are more limited than the aichat 
+
+- Only supports openrouter for LLM provider -- that's what I use, and I'm not planning on adding a more general provider support. 
+
+# Run
 
 1. Set key:
    - `export HAXSCRAMPER_LLM_REPL_KEY=...`
@@ -16,63 +30,6 @@ Initial implementation of phases 0-2:
 3. Start:
    - `uv run hax-repl --session my-test`
 
-### Function plugins quick start
+# Note
 
-Example function-provider plugins are included and auto-loaded via entry points:
-
-- `example_functions` provider:
-  - `echo_text`
-  - `sum_numbers`
-  - `list_directory`
-  - `read_text_file`
-- `json_functions` provider:
-  - `pretty_json`
-- built-in provider:
-  - `python_eval`
-
-In REPL:
-
-- List loaded functions:
-  - `.functions`
-- Call function directly:
-  - `.functions call sum_numbers {"numbers":[1,2,3.5]}`
-  - `.functions call echo_text {"text":"hello","uppercase":true}`
-- Let model call tools automatically:
-  - `Use available tools to list files in the current directory and summarize them.`
-
-### MCP and agent loop quick start
-
-- List loaded MCP clients:
-  - `.mcp list`
-- Load MCP client from descriptor JSON:
-  - `.mcp load examples/mcp_time_descriptor.json`
-- Invoke MCP method directly:
-  - `.mcp call example-time now_utc {}`
-- List available agents:
-  - `.agent list`
-- Start and run an agent:
-  - `.agent start code-exec "Inspect the project and summarize next refactor steps"`
-  - `.agent run 3`
-- Pause/resume/step/status:
-  - `.agent pause`
-  - `.agent resume`
-  - `.agent step`
-  - `.agent status`
-
-### RAG quick start
-
-- For Chroma vector embeddings, set:
-  - `export HAXSCRAMPER_LLM_REPL_KEY=...`
-- List providers:
-  - `.rag providers`
-- Update vector index (Chroma):
-  - `.rag update chroma mydocs README.md src/hax_repl/repl.py`
-- Query index:
-  - `.rag query chroma mydocs "How does command parsing work?"`
-- Update full-text index (Tantivy):
-  - `.rag update tantivy mydocs README.md src/hax_repl/repl.py`
-- Use macro in prompt:
-  - `Summarize this context: $(rag:chroma/mydocs "command parsing")`
-  - `OS details: $(get-os)`
-
-See `docs/plugins.md` for full plugin authoring and usage instructions.
+The code in this repo *was* initially written using Cursor and ChatGPT Codex-5.3 for the initial POC, but in the future I will be documenting, cleaning it up and expanding. 
