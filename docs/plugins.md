@@ -13,6 +13,8 @@ The project defines these entry point groups:
 
 At this stage, function providers are fully wired into runtime tool calling, and MCP/agent plugins are integrated into the runtime loop.
 
+RAG providers are also wired into runtime and macro expansion.
+
 ## Included example function providers
 
 Configured in `pyproject.toml`:
@@ -80,6 +82,29 @@ Configured in `pyproject.toml`:
 
 Agent execution is step-wise and uses the same model/tool loop with interactive per-tool approval.
 
+## Included example RAG providers
+
+Configured in `pyproject.toml`:
+
+- `chroma = "hax_repl.plugins.rag.examples:ChromaVectorRagProvider"`
+- `tantivy = "hax_repl.plugins.rag.examples:TantivyFullTextRagProvider"`
+
+### RAG REPL commands
+
+- `.rag providers`
+- `.rag indices <provider>`
+- `.rag update <provider> <index> <path1> [path2 ...]`
+- `.rag query <provider> <index> <query>`
+
+### Macro syntax
+
+- `$(get-os)` expands to host OS description
+- `$(rag:provider/index "query text")` performs RAG query and inlines result chunks into prompt
+
+Example:
+
+- `Explain this code: $(rag:chroma/mydocs "how repl commands are parsed")`
+
 ## How to use functions in the REPL
 
 ### 1) Inspect loaded functions
@@ -121,6 +146,7 @@ Prompt examples:
    - approve
    - reject with reason
    - manual result payload
+9. Macro expansion executes before prompt send; RAG invocations contribute provenance into context hashing.
 
 ## Writing your own function provider
 

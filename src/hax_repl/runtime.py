@@ -16,9 +16,10 @@ from hax_repl.hashing import (
 )
 from hax_repl.functions import BuiltinFunctionProvider, FunctionProvider, FunctionRegistry
 from hax_repl.llm_client import ChatCompletionResult, ChatMessage, OpenRouterClient, ToolCall
-from hax_repl.macro import MacroExpander
+from hax_repl.macro import MacroExpander, MacroExpansionResult
 from hax_repl.mcp import DescriptorMcpLoader, LocalClassMcpClientAdapter, McpClient, RegisteredMcpClient
 from hax_repl.message_store import MessageStore
+from hax_repl.rag import RagRegistry, RagResult
 from hax_repl.models import (
     AnyMessage,
     ContextHashID,
@@ -73,6 +74,8 @@ class AppRuntime:
         self._model_name = model_name
         self._client = OpenRouterClient(model_name=model_name)
         self._macro_expander = MacroExpander()
+        self._rag_registry = RagRegistry()
+        self._register_rag_plugins()
         self._function_registry = self._build_function_registry()
         self._mcp_loader = DescriptorMcpLoader()
         self._mcp_clients: dict[str, RegisteredMcpClient] = {}
@@ -101,13 +104,21 @@ class AppRuntime:
                 registry.register(function_spec)
         return registry
 
+    def _register_rag_plugins(self) -> None:
+        for loaded in load_plugins_or_fail("hax_repl.rag_providers"):
+            provider_candidate = instantiate_plugin(loaded.plugin)
+            provider_obj = provider_candidate
+            if not hasattr(provider_obj, "list_indices") or not hasattr(provider_obj, "query"):
+                raise RuntimeError(f"Invalid RAG provider plugin: {loaded.name}")
+            self._rag_registry.register(loaded.name, provider_obj)
+
     def _build_agent_registry(self) -> dict[str, AgentPlugin]:
         agents: dict[str, AgentPlugin] = {}
         default_agent = DefaultInteractiveAgent()
         agents[default_agent.agent_name()] = default_agent
         for loaded in load_plugins_or_fail("hax_repl.agents"):
             candidate = instantiate_plugin(loaded.plugin)
-            plugin_obj = candidate() if callable(candidate) and not hasattr(candidate, "agent_name") else candidate
+            plugin_obj = candidate
             if not hasattr(plugin_obj, "agent_name") or not hasattr(plugin_obj, "build_step_prompt"):
                 raise RuntimeError(f"Invalid agent plugin: {loaded.name}")
             name = plugin_obj.agent_name()
@@ -117,7 +128,7 @@ class AppRuntime:
     def _register_mcp_plugins(self) -> None:
         for loaded in load_plugins_or_fail("hax_repl.mcp_clients"):
             candidate = instantiate_plugin(loaded.plugin)
-            client_obj = candidate() if callable(candidate) and not hasattr(candidate, "list_tools") else candidate
+            client_obj = candidate
             if hasattr(client_obj, "list_tools") and hasattr(client_obj, "invoke") and hasattr(
                 client_obj, "client_name"
             ):
@@ -205,8 +216,42 @@ class AppRuntime:
     def invoke_function(self, function_name: str, arguments_json: str) -> str:
         return self._function_registry.invoke_json(function_name, arguments_json)
 
+    def _expand_prompt_with_macros(self, original_prompt: str) -> MacroExpansionResult:
+        return self._macro_expander.expand(
+            original_prompt,
+            rag_query=lambda provider, index, query: self.rag_query(provider, index, query),
+        )
+
     def list_mcp_clients(self) -> list[RegisteredMcpClient]:
         return [self._mcp_clients[name] for name in sorted(self._mcp_clients.keys())]
+
+    def list_rag_providers(self) -> list[str]:
+        return self._rag_registry.list_providers()
+
+    def list_rag_indices(self, provider_name: str) -> Sequence[str]:
+        return self._rag_registry.list_indices(provider_name)
+
+    def rag_query(self, provider_name: str, index_name: str, query_text: str, options_json: str = "{}") -> RagResult:
+        return self._rag_registry.query(
+            provider_name=provider_name,
+            index_name=index_name,
+            query_text=query_text,
+            options_json=options_json,
+        )
+
+    def rag_update(
+        self,
+        provider_name: str,
+        index_name: str,
+        sources: Sequence[str],
+        options_json: str = "{}",
+    ) -> None:
+        self._rag_registry.update_index(
+            provider_name=provider_name,
+            index_name=index_name,
+            sources=sources,
+            options_json=options_json,
+        )
 
     def load_mcp_descriptor(self, descriptor_path: str) -> RegisteredMcpClient:
         adapter = self._mcp_loader.load(Path(descriptor_path).expanduser())
@@ -372,7 +417,12 @@ class AppRuntime:
     ) -> RuntimeResponse:
         enabled_function_refs = self._enabled_function_refs(enabled_functions)
         included_context_ids = [cid.md5 for cid in self._session.message_ids]
-        augmented_prompt = self._macro_expander.expand(original_prompt)
+        macro_expansion = self._expand_prompt_with_macros(original_prompt)
+        augmented_prompt = macro_expansion.expanded_text
+        rag_provenance = [
+            f"{record.provider}:{record.index}:{len(record.chunks)}"
+            for record in macro_expansion.rag_records
+        ]
 
         prompt_content_id = content_hash_for_prompt(
             original_prompt=original_prompt,
@@ -384,7 +434,7 @@ class AppRuntime:
             content_hash=prompt_content_id,
             model_name=self._model_name,
             function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
-            rag_provenance=[],
+            rag_provenance=rag_provenance,
         )
         prompt_message = PromptMessage(
             context_id=prompt_context_id,
@@ -467,7 +517,7 @@ class AppRuntime:
             content_hash=response_content_id,
             model_name=self._model_name,
             function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
-            rag_provenance=[],
+            rag_provenance=rag_provenance,
         )
         response_message = ResponseMessage(
             context_id=response_context_id,
@@ -512,7 +562,12 @@ class AppRuntime:
 
     def append_history_prompt(self, text: str) -> PromptMessage:
         included_context_ids = [cid.md5 for cid in self._session.message_ids]
-        augmented_prompt = self._macro_expander.expand(text)
+        macro_expansion = self._expand_prompt_with_macros(text)
+        augmented_prompt = macro_expansion.expanded_text
+        rag_provenance = [
+            f"{record.provider}:{record.index}:{len(record.chunks)}"
+            for record in macro_expansion.rag_records
+        ]
         prompt_content_id = content_hash_for_prompt(
             original_prompt=text,
             augmented_prompt=augmented_prompt,
@@ -523,7 +578,7 @@ class AppRuntime:
             content_hash=prompt_content_id,
             model_name=self._model_name,
             function_schema_hashes=[],
-            rag_provenance=[],
+            rag_provenance=rag_provenance,
         )
         prompt_message = PromptMessage(
             context_id=prompt_context_id,
@@ -539,7 +594,7 @@ class AppRuntime:
         return prompt_message
 
     def expand_prompt_macros(self, text: str) -> str:
-        return self._macro_expander.expand(text)
+        return self._expand_prompt_with_macros(text).expanded_text
 
     def delete_last_message(self) -> bool:
         if not self._session.turns:

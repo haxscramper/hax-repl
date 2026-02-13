@@ -59,4 +59,18 @@ In REPL:
   - `.agent step`
   - `.agent status`
 
+### RAG quick start
+
+- List providers:
+  - `.rag providers`
+- Update vector index (Chroma):
+  - `.rag update chroma mydocs README.md src/hax_repl/repl.py`
+- Query index:
+  - `.rag query chroma mydocs "How does command parsing work?"`
+- Update full-text index (Tantivy):
+  - `.rag update tantivy mydocs README.md src/hax_repl/repl.py`
+- Use macro in prompt:
+  - `Summarize this context: $(rag:chroma/mydocs "command parsing")`
+  - `OS details: $(get-os)`
+
 See `docs/plugins.md` for full plugin authoring and usage instructions.

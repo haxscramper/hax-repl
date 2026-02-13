@@ -5,11 +5,15 @@ description = "POC LLM REPL with session persistence"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "chromadb>=1.0.20",
     "httpx>=0.28.1",
+    "numpy>=2.3.2",
     "prompt-toolkit>=3.0.51",
     "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
+    "sentence-transformers>=5.1.0",
+    "tantivy>=0.24.0",
 ]
 
 [project.scripts]
@@ -22,6 +26,10 @@ json_functions = "hax_repl.plugins.functions.examples:JsonFunctionProvider"
 [project.entry-points."hax_repl.mcp_clients"]
 example_fs = "hax_repl.plugins.mcp.examples:example_fs_mcp_client"
 example_time = "hax_repl.plugins.mcp.examples:example_time_mcp_client"
+
+[project.entry-points."hax_repl.rag_providers"]
+chroma = "hax_repl.plugins.rag.examples:ChromaVectorRagProvider"
+tantivy = "hax_repl.plugins.rag.examples:TantivyFullTextRagProvider"
 
 [project.entry-points."hax_repl.agents"]
 code_exec = "hax_repl.plugins.agents.examples:CodeExecAgentPlugin"

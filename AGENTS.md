@@ -16,7 +16,9 @@ This file describes the current architecture and conventions for contributors an
   - MCP plugin loading and descriptor-driven MCP client loading
   - agent plugin loading and step-wise pause/resume execution loop
   - human-in-the-loop confirmation for model-requested function calls
-- Advanced features (plugin-wired function calling, concrete RAG providers, MCP integration, agent loop control) are scaffolded but not complete yet.
+- Phase 5 is implemented for POC scope:
+  - concrete RAG providers (vector + full-text), runtime registry, macro-driven retrieval
+- Advanced features are implemented across phases 0-6 for POC scope, with production hardening gaps remaining.
 
 ## Implementation Phases and Status
 
@@ -80,16 +82,19 @@ Legend:
   - dedicated "agent configuration + function set" model
   - explicit agent runner abstraction beyond direct function tools
 
-### Phase 5 - RAG and Macro Expansion (`PARTIAL`)
+### Phase 5 - RAG and Macro Expansion (`DONE` for POC scope)
 
 - Implemented:
-  - RAG protocol/data scaffolding (`src/hax_repl/rag.py`)
-  - macro parser placeholder (`src/hax_repl/macro.py`)
-- Missing:
-  - concrete RAG provider implementation(s)
-  - runtime RAG invocation and provenance persistence
-  - deterministic RAG macro handling (for example `$(rag:...)`)
-  - index management/update command flows
+  - RAG registry with provider listing/query/update routes in `src/hax_repl/rag.py`
+  - runtime loading of `hax_repl.rag_providers` plugins
+  - example vector RAG provider: `src/hax_repl/plugins/rag/examples.py` (`chroma`)
+  - example full-text RAG provider: `src/hax_repl/plugins/rag/examples.py` (`tantivy`)
+  - macro expansion with:
+    - `$(get-os)`
+    - `$(rag:provider/index "query text")`
+  - RAG macro expansion before prompt send with retrieval chunk inlining
+  - RAG provenance included in context hashing
+  - REPL RAG command suite (`.rag providers|indices|update|query`)
 
 ### Phase 6 - MCP and Agent Pause/Resume (`DONE` for POC scope)
 
@@ -138,14 +143,15 @@ High-level flow per query:
 
 1. Read prompt from multiline `prompt_toolkit` input
 2. Build and persist `PromptMessage` with content/context hashes
-3. Build remote query payload from stored conversation + current prompt
-4. Run model interaction loop:
+3. Expand macros on current prompt (`$(get-os)`, `$(rag:...)`) and build augmented prompt
+4. Build remote query payload from stored conversation + augmented prompt
+5. Run model interaction loop:
    - either stream plain text response, or
    - execute iterative tool-calling loop with user confirmation on each call
-5. Split `<think>...</think>` from visible text
-6. Persist `ResponseMessage` (including function calls/results) and attach it to current turn
-7. Print response + timing/size stats in REPL
-8. Agent commands can trigger step-wise autonomous loop that uses the same model/tool interaction path
+6. Split `<think>...</think>` from visible text
+7. Persist `ResponseMessage` (including function calls/results) and attach it to current turn
+8. Print response + timing/size stats in REPL
+9. Agent commands can trigger step-wise autonomous loop that uses the same model/tool interaction path
 
 Runtime command helper APIs currently available:
 
@@ -155,6 +161,7 @@ Runtime command helper APIs currently available:
 - `delete_last_message()`
 - `generate_again()`
 - `expand_prompt_macros()`
+- `list_rag_providers()`, `list_rag_indices()`, `rag_update()`, `rag_query()`
 
 Function-calling APIs currently available:
 
@@ -200,6 +207,10 @@ Function-calling APIs currently available:
   - `.mcp list`
   - `.mcp load <descriptor.json>`
   - `.mcp call <client-name> <tool-name> <json-args>`
+  - `.rag providers`
+  - `.rag indices <provider>`
+  - `.rag update <provider> <index> <path1> [path2 ...]`
+  - `.rag query <provider> <index> <query>`
   - `.agent list`
   - `.agent start <agent-name> <goal>`
   - `.agent status`
@@ -240,6 +251,8 @@ Function-calling APIs currently available:
   - `src/hax_repl/macro.py`
 - Function provider entry point group:
   - `hax_repl.function_providers`
+- RAG provider entry point group:
+  - `hax_repl.rag_providers`
 - MCP client entry point group:
   - `hax_repl.mcp_clients`
 - Agent entry point group:
@@ -247,7 +260,6 @@ Function-calling APIs currently available:
 
 ## Known Gaps
 
-- No dedicated RAG provider implementation yet
 - Function calling exists but lacks provider/agent-level configuration UX
 - No production-grade external MCP transport client yet (current implementation focuses on local/adapted MCP clients)
 - Agent loop is currently single-active-run and REPL-driven (no background scheduler)

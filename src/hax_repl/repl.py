@@ -35,6 +35,10 @@ COMMANDS = [
     ".mcp list",
     ".mcp load",
     ".mcp call",
+    ".rag providers",
+    ".rag indices",
+    ".rag update",
+    ".rag query",
     ".agent list",
     ".agent start",
     ".agent status",
@@ -300,6 +304,10 @@ def _handle_command(
         console.print("  .mcp list")
         console.print("  .mcp load <descriptor.json>")
         console.print("  .mcp call <client-name> <tool-name> <json-args>")
+        console.print("  .rag providers")
+        console.print("  .rag indices <provider>")
+        console.print("  .rag update <provider> <index> <path1> [path2 ...]")
+        console.print("  .rag query <provider> <index> <query>")
         console.print("  .agent list")
         console.print("  .agent start <agent-name> <goal>")
         console.print("  .agent status")
@@ -377,6 +385,63 @@ def _handle_command(
             console.print(result_json)
             return True
         console.print("[yellow]Usage: .mcp <list|load|call> ...[/yellow]")
+        return True
+
+    if args[0] == ".rag":
+        if len(args) == 2 and args[1] == "providers":
+            providers = runtime.list_rag_providers()
+            if not providers:
+                console.print("[yellow]No RAG providers loaded.[/yellow]")
+                return True
+            console.print("[bold]RAG providers:[/bold]")
+            for provider in providers:
+                console.print(f"  - {provider}")
+            return True
+        if len(args) == 3 and args[1] == "indices":
+            provider = args[2]
+            try:
+                indices = runtime.list_rag_indices(provider)
+            except Exception as exc:
+                console.print(f"[bold red]Failed to list indices:[/bold red] {exc}")
+                return True
+            console.print(f"[bold]Indices for {provider}:[/bold]")
+            if not indices:
+                console.print("  (none)")
+                return True
+            for index in indices:
+                console.print(f"  - {index}")
+            return True
+        if len(args) >= 5 and args[1] == "update":
+            provider = args[2]
+            index_name = args[3]
+            sources = args[4:]
+            try:
+                runtime.rag_update(provider, index_name, sources)
+            except Exception as exc:
+                console.print(f"[bold red]RAG update failed:[/bold red] {exc}")
+                return True
+            console.print(
+                f"[green]Updated RAG index {index_name} on {provider} with {len(sources)} source(s).[/green]"
+            )
+            return True
+        if len(args) >= 5 and args[1] == "query":
+            provider = args[2]
+            index_name = args[3]
+            query_text = command_text.split(index_name, 1)[1].strip()
+            try:
+                result = runtime.rag_query(provider, index_name, query_text)
+            except Exception as exc:
+                console.print(f"[bold red]RAG query failed:[/bold red] {exc}")
+                return True
+            console.print(f"[bold]RAG {provider}/{index_name} results:[/bold]")
+            if not result.chunks:
+                console.print("  (no results)")
+                return True
+            for chunk in result.chunks:
+                console.print(f"- [{chunk.source_id}] score={chunk.score:.4f}")
+                console.print(textwrap.shorten(chunk.text.replace("\n", " "), width=220, placeholder=" ..."))
+            return True
+        console.print("[yellow]Usage: .rag <providers|indices|update|query> ...[/yellow]")
         return True
 
     if args[0] == ".agent":

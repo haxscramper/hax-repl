@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Sequence
+
+from hax_repl.rag import RagChunk, RagProvider, RagResult, options_get_int
+
+
+def _chunk_text(text: str, chunk_size: int = 800, overlap: int = 120) -> list[str]:
+    if not text:
+        return []
+    parts: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + chunk_size)
+        parts.append(text[start:end])
+        if end >= len(text):
+            break
+        start = max(0, end - overlap)
+    return parts
+
+
+class ChromaVectorRagProvider(RagProvider):
+    def __init__(self) -> None:
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+
+        app_dir = Path.home() / ".local" / "share" / "haxllm" / "rag" / "chroma"
+        app_dir.mkdir(parents=True, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=str(app_dir))
+        self._embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        self._provider_name = "chroma"
+
+    def list_indices(self) -> Sequence[str]:
+        return [collection.name for collection in self._client.list_collections()]
+
+    def query(self, index_name: str, query_text: str, options_json: str = "{}") -> RagResult:
+        top_k = max(1, options_get_int(options_json, "top_k", 5))
+        collection = self._client.get_or_create_collection(name=index_name)
+        embedding = self._embedder.encode([query_text])[0].tolist()
+        result = collection.query(query_embeddings=[embedding], n_results=top_k)
+        documents = result.get("documents", [[]])[0]
+        metadatas = result.get("metadatas", [[]])[0]
+        distances = result.get("distances", [[]])[0]
+        chunks: list[RagChunk] = []
+        for idx, doc in enumerate(documents):
+            metadata = metadatas[idx] if idx < len(metadatas) else {}
+            distance = distances[idx] if idx < len(distances) else 0.0
+            score = 1.0 / (1.0 + float(distance))
+            source_id = str(metadata.get("source_id", f"{index_name}:{idx}"))
+            chunks.append(RagChunk(source_id=source_id, text=str(doc), score=score))
+        return RagResult(provider=self._provider_name, index=index_name, chunks=chunks)
+
+    def update_index(self, index_name: str, sources: Sequence[str], options_json: str = "{}") -> None:
+        collection = self._client.get_or_create_collection(name=index_name)
+        chunk_size = max(200, options_get_int(options_json, "chunk_size", 800))
+        overlap = max(0, options_get_int(options_json, "chunk_overlap", 120))
+
+        doc_ids: list[str] = []
+        documents: list[str] = []
+        metadatas: list[dict[str, str]] = []
+        for source in sources:
+            path = Path(source).expanduser()
+            if not path.exists() or not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for idx, chunk in enumerate(_chunk_text(text, chunk_size=chunk_size, overlap=overlap)):
+                doc_id = f"{path}:{idx}"
+                doc_ids.append(doc_id)
+                documents.append(chunk)
+                metadatas.append({"source_id": str(path)})
+        if not documents:
+            return
+        embeddings = self._embedder.encode(documents).tolist()
+        collection.upsert(ids=doc_ids, documents=documents, embeddings=embeddings, metadatas=metadatas)
+
+
+class TantivyFullTextRagProvider(RagProvider):
+    def __init__(self) -> None:
+        import tantivy
+
+        base_dir = Path.home() / ".local" / "share" / "haxllm" / "rag" / "tantivy"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        self._base_dir = base_dir
+        self._tantivy = tantivy
+        self._provider_name = "tantivy"
+
+    def list_indices(self) -> Sequence[str]:
+        return [p.name for p in self._base_dir.iterdir() if p.is_dir()]
+
+    def query(self, index_name: str, query_text: str, options_json: str = "{}") -> RagResult:
+        index = self._open_index(index_name)
+        schema = index.schema
+        query_parser = index.parse_query(query_text, ["body"])
+        searcher = index.searcher()
+        top_k = max(1, options_get_int(options_json, "top_k", 5))
+        top_docs = searcher.search(query_parser, top_k)
+        chunks: list[RagChunk] = []
+        for score, address in top_docs:
+            doc = searcher.doc(address)
+            source_id = str(doc.get_first("source_id") or f"{index_name}:{address}")
+            text = str(doc.get_first("body") or "")
+            chunks.append(RagChunk(source_id=source_id, text=text, score=float(score)))
+        return RagResult(provider=self._provider_name, index=index_name, chunks=chunks)
+
+    def update_index(self, index_name: str, sources: Sequence[str], options_json: str = "{}") -> None:
+        index = self._open_or_create_index(index_name)
+        writer = index.writer()
+        chunk_size = max(200, options_get_int(options_json, "chunk_size", 800))
+        overlap = max(0, options_get_int(options_json, "chunk_overlap", 120))
+        for source in sources:
+            path = Path(source).expanduser()
+            if not path.exists() or not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for idx, chunk in enumerate(_chunk_text(text, chunk_size=chunk_size, overlap=overlap)):
+                writer.add_document(
+                    {
+                        "source_id": f"{path}:{idx}",
+                        "body": chunk,
+                    }
+                )
+        writer.commit()
+
+    def _open_or_create_index(self, index_name: str):
+        dir_path = self._base_dir / index_name
+        dir_path.mkdir(parents=True, exist_ok=True)
+        schema_builder = self._tantivy.SchemaBuilder()
+        schema_builder.add_text_field("source_id", stored=True)
+        schema_builder.add_text_field("body", stored=True)
+        schema = schema_builder.build()
+        if any(dir_path.iterdir()):
+            return self._tantivy.Index.open(str(dir_path))
+        return self._tantivy.Index(schema, path=str(dir_path))
+
+    def _open_index(self, index_name: str):
+        dir_path = self._base_dir / index_name
+        if not dir_path.exists():
+            return self._open_or_create_index(index_name)
+        return self._tantivy.Index.open(str(dir_path))
