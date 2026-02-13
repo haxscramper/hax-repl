@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from hax_repl.mcp import LocalClassMcpClientAdapter
+from hax_repl.models import PluginMCPMeta
+from hax_repl.plugin_system import PluginDescriptor
 
 
 class ExampleFilesystemTools:
@@ -24,3 +26,13 @@ class ExampleFilesystemTools:
 
 def example_fs_mcp_client() -> LocalClassMcpClientAdapter:
     return LocalClassMcpClientAdapter("example-fs", ExampleFilesystemTools())
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginMCPMeta(
+            name="example-fs",
+            description="Example filesystem MCP client plugin.",
+        ),
+        plugin_factory=example_fs_mcp_client,
+    )

@@ -6,6 +6,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from hax_repl.functions import FunctionProvider, FunctionSpec
+from hax_repl.models import PluginFunctionMeta
+from hax_repl.plugin_system import PluginDescriptor
 
 
 class JsonUtilityArgs(BaseModel):
@@ -35,3 +37,13 @@ class JsonFunctionProvider(FunctionProvider):
                 impl=_pretty_json_impl,
             )
         ]
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginFunctionMeta(
+            name="json-functions",
+            description="JSON utility function provider plugin.",
+        ),
+        plugin_factory=JsonFunctionProvider,
+    )

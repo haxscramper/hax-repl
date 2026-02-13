@@ -27,13 +27,17 @@ from hax_repl.models import (
     FunctionCallRequest,
     FunctionCallResult,
     ModelName,
+    PluginAgentMeta,
+    PluginFunctionMeta,
+    PluginMCPMeta,
+    PluginRagMeta,
     PromptMessage,
     ResponseMessage,
     RoleName,
     SessionFile,
     SessionName,
 )
-from hax_repl.plugin_system import instantiate_plugin, load_plugins_or_fail
+from hax_repl.plugin_system import LoadedPlugin, load_plugins_from_config_or_fail
 from hax_repl.session_store import SessionStore
 
 LOGGER = logging.getLogger(__name__)
@@ -64,15 +68,30 @@ class FunctionCallDecision:
 
 
 class AppRuntime:
-    def __init__(self, session_name: str | None, model_name: str = "anthropic/claude-sonnet-4.5") -> None:
+    def __init__(
+        self,
+        session_name: str | None,
+        model_name: str = "anthropic/claude-sonnet-4.5",
+        plugins_config_path: str | None = None,
+    ) -> None:
         app_dir = Path.home() / ".local" / "share" / "haxllm"
         sessions_dir = app_dir / "sessions"
         db_path = app_dir / "messages.sqlite3"
+        repo_root = Path(__file__).resolve().parents[2]
+        config_path = (
+            Path(plugins_config_path).expanduser().resolve()
+            if plugins_config_path is not None
+            else (repo_root / "hax_repl.plugins.json")
+        )
 
         self._session_store = SessionStore(sessions_dir)
         self._message_store = MessageStore(db_path)
         self._model_name = model_name
         self._client = OpenRouterClient(model_name=model_name)
+        self._loaded_plugins = load_plugins_from_config_or_fail(
+            config_path=config_path,
+            interpolation_vars={"repo": str(repo_root)},
+        )
         self._macro_expander = MacroExpander()
         self._rag_registry = RagRegistry()
         self._register_rag_plugins()
@@ -88,14 +107,19 @@ class AppRuntime:
         self._default_role = RoleName(value="user")
         self._default_agent = "default-agent"
 
+    def _loaded_plugins_for(self, kind: str) -> list[LoadedPlugin]:
+        return [plugin for plugin in self._loaded_plugins if plugin.kind == kind]
+
     def _build_function_registry(self) -> FunctionRegistry:
         registry = FunctionRegistry()
         builtin_provider: FunctionProvider = BuiltinFunctionProvider()
         for function_spec in builtin_provider.functions():
             registry.register(function_spec)
 
-        for loaded in load_plugins_or_fail("hax_repl.function_providers"):
-            provider_candidate = instantiate_plugin(loaded.plugin)
+        for loaded in self._loaded_plugins_for("function_provider"):
+            if not isinstance(loaded.metadata, PluginFunctionMeta):
+                raise RuntimeError(f"Invalid function plugin metadata in {loaded.path}")
+            provider_candidate = loaded.description.get_plugin()
             if not hasattr(provider_candidate, "functions"):
                 raise RuntimeError(f"Invalid function provider plugin: {loaded.name}")
             provider = provider_candidate
@@ -105,8 +129,10 @@ class AppRuntime:
         return registry
 
     def _register_rag_plugins(self) -> None:
-        for loaded in load_plugins_or_fail("hax_repl.rag_providers"):
-            provider_candidate = instantiate_plugin(loaded.plugin)
+        for loaded in self._loaded_plugins_for("rag_provider"):
+            if not isinstance(loaded.metadata, PluginRagMeta):
+                raise RuntimeError(f"Invalid RAG plugin metadata in {loaded.path}")
+            provider_candidate = loaded.description.get_plugin()
             provider_obj = provider_candidate
             if not hasattr(provider_obj, "list_indices") or not hasattr(provider_obj, "query"):
                 raise RuntimeError(f"Invalid RAG provider plugin: {loaded.name}")
@@ -116,8 +142,10 @@ class AppRuntime:
         agents: dict[str, AgentPlugin] = {}
         default_agent = DefaultInteractiveAgent()
         agents[default_agent.agent_name()] = default_agent
-        for loaded in load_plugins_or_fail("hax_repl.agents"):
-            candidate = instantiate_plugin(loaded.plugin)
+        for loaded in self._loaded_plugins_for("agent"):
+            if not isinstance(loaded.metadata, PluginAgentMeta):
+                raise RuntimeError(f"Invalid agent plugin metadata in {loaded.path}")
+            candidate = loaded.description.get_plugin()
             plugin_obj = candidate
             if not hasattr(plugin_obj, "agent_name") or not hasattr(plugin_obj, "build_step_prompt"):
                 raise RuntimeError(f"Invalid agent plugin: {loaded.name}")
@@ -126,8 +154,10 @@ class AppRuntime:
         return agents
 
     def _register_mcp_plugins(self) -> None:
-        for loaded in load_plugins_or_fail("hax_repl.mcp_clients"):
-            candidate = instantiate_plugin(loaded.plugin)
+        for loaded in self._loaded_plugins_for("mcp_client"):
+            if not isinstance(loaded.metadata, PluginMCPMeta):
+                raise RuntimeError(f"Invalid MCP plugin metadata in {loaded.path}")
+            candidate = loaded.description.get_plugin()
             client_obj = candidate
             if hasattr(client_obj, "list_tools") and hasattr(client_obj, "invoke") and hasattr(
                 client_obj, "client_name"
@@ -137,7 +167,7 @@ class AppRuntime:
             if isinstance(client_obj, LocalClassMcpClientAdapter):
                 self._register_mcp_client(client_obj)
                 continue
-            raise RuntimeError(f"Invalid MCP plugin: {loaded.name}")
+            raise RuntimeError(f"Invalid MCP plugin: {loaded.name}, plugin is expected to have methods list_tools() and invoke(), but {type(client_obj)} got methods {', '.join(dir(client_obj))}")
 
     def _register_mcp_client(self, client: McpClient) -> RegisteredMcpClient:
         function_names: list[str] = []

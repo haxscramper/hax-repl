@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from hax_repl.agents import AgentPlugin
+from hax_repl.models import PluginAgentMeta
+from hax_repl.plugin_system import PluginDescriptor
 
 
 class CodeExecAgentPlugin(AgentPlugin):
@@ -20,3 +22,13 @@ class CodeExecAgentPlugin(AgentPlugin):
 
     def should_stop(self, *, response_text: str, step_index: int, max_steps: int) -> bool:
         return "<agent_done>" in response_text or step_index + 1 >= max_steps
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginAgentMeta(
+            name="code-exec",
+            description="Step-wise coding agent plugin.",
+        ),
+        plugin_factory=CodeExecAgentPlugin,
+    )

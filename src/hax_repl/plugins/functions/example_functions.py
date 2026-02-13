@@ -6,6 +6,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from hax_repl.functions import FunctionProvider, FunctionSpec
+from hax_repl.models import PluginFunctionMeta
+from hax_repl.plugin_system import PluginDescriptor
 
 
 class EchoTextArgs(BaseModel):
@@ -117,3 +119,13 @@ class ExampleFunctionProvider(FunctionProvider):
                 impl=_read_text_file_impl,
             ),
         ]
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginFunctionMeta(
+            name="example-functions",
+            description="Example function provider plugin with file and text helpers.",
+        ),
+        plugin_factory=ExampleFunctionProvider,
+    )

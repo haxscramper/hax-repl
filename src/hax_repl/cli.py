@@ -33,11 +33,21 @@ def main() -> None:
         default="anthropic/claude-sonnet-4.5",
         help="OpenRouter model name",
     )
+    parser.add_argument(
+        "--plugins-config",
+        type=str,
+        default=None,
+        help="Path to plugin configuration JSON file",
+    )
     args = parser.parse_args()
 
     log_file = configure_logging()
 
-    runtime = AppRuntime(session_name=args.session, model_name=args.model)
+    runtime = AppRuntime(
+        session_name=args.session,
+        model_name=args.model,
+        plugins_config_path=args.plugins_config,
+    )
     logging.getLogger(__name__).info("Starting hax-repl session=%s log_file=%s", args.session, log_file)
     run_repl(runtime)
 

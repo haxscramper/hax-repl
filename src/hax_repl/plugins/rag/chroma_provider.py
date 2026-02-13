@@ -7,6 +7,8 @@ from typing import Sequence
 
 import httpx
 
+from hax_repl.models import PluginRagMeta
+from hax_repl.plugin_system import PluginDescriptor
 from hax_repl.plugins.rag._chunking import chunk_text
 from hax_repl.rag import RagChunk, RagProvider, RagResult, options_get_int
 
@@ -128,3 +130,13 @@ class ChromaVectorRagProvider(RagProvider):
             raise RuntimeError(
                 f"OpenRouter embeddings request failed with status={response.status_code}. Response body: {body}"
             ) from exc
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginRagMeta(
+            name="chroma",
+            description="Chroma vector-store RAG provider.",
+        ),
+        plugin_factory=ChromaVectorRagProvider,
+    )

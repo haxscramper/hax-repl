@@ -77,3 +77,30 @@ class SessionFile(BaseModel):
     created_at_iso: str
     turns: Sequence[SessionTurn] = Field(default_factory=list)
     message_ids: Sequence[ContextHashID] = Field(default_factory=list)
+
+
+class PluginFunctionMeta(BaseModel):
+    kind: Literal["function_provider"] = "function_provider"
+    name: str
+    description: str = ""
+
+
+class PluginMCPMeta(BaseModel):
+    kind: Literal["mcp_client"] = "mcp_client"
+    name: str
+    description: str = ""
+
+
+class PluginRagMeta(BaseModel):
+    kind: Literal["rag_provider"] = "rag_provider"
+    name: str
+    description: str = ""
+
+
+class PluginAgentMeta(BaseModel):
+    kind: Literal["agent"] = "agent"
+    name: str
+    description: str = ""
+
+
+PluginMetadata = PluginFunctionMeta | PluginMCPMeta | PluginRagMeta | PluginAgentMeta

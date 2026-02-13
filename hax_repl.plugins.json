@@ -1,0 +1,28 @@
+{
+  "plugins": [
+    {
+      "path": "{repo}/src/hax_repl/plugins/functions/example_functions.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/functions/json_functions.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/mcp/example_fs.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/mcp/example_time.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/rag/chroma_provider.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/rag/tantivy_provider.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/agents/code_exec.py"
+    },
+    {
+      "path": "{repo}/src/hax_repl/plugins/agents/research.py"
+    }
+  ]
+}

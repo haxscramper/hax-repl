@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+from hax_repl.models import PluginRagMeta
+from hax_repl.plugin_system import PluginDescriptor
 from hax_repl.plugins.rag._chunking import chunk_text
 from hax_repl.rag import RagChunk, RagProvider, RagResult, options_get_int
 
@@ -64,3 +66,13 @@ class TantivyFullTextRagProvider(RagProvider):
         if not dir_path.exists():
             return self._open_or_create_index(index_name)
         return self._tantivy.Index.open(str(dir_path))
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginRagMeta(
+            name="tantivy",
+            description="Tantivy full-text RAG provider.",
+        ),
+        plugin_factory=TantivyFullTextRagProvider,
+    )

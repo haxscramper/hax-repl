@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from hax_repl.mcp import LocalClassMcpClientAdapter
+from hax_repl.models import PluginMCPMeta
+from hax_repl.plugin_system import PluginDescriptor
 
 
 class ExampleTimeTools:
@@ -17,3 +19,13 @@ class ExampleTimeTools:
 
 def example_time_mcp_client() -> LocalClassMcpClientAdapter:
     return LocalClassMcpClientAdapter("example-time", ExampleTimeTools())
+
+
+def register() -> PluginDescriptor:
+    return PluginDescriptor(
+        metadata=PluginMCPMeta(
+            name="example-time",
+            description="Example time/date MCP client plugin.",
+        ),
+        plugin_factory=example_time_mcp_client,
+    )
