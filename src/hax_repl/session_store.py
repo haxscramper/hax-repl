@@ -74,3 +74,19 @@ class SessionStore:
         )
         self.save(updated)
         return updated
+
+    def remove_last_turn(self, session: SessionFile) -> tuple[SessionFile, SessionTurn | None]:
+        if not session.turns:
+            return session, None
+        turns = list(session.turns)
+        removed_turn = turns.pop()
+        message_ids = [cid for cid in session.message_ids if cid.md5 != removed_turn.prompt_id.md5]
+        if removed_turn.response_id is not None:
+            message_ids = [cid for cid in message_ids if cid.md5 != removed_turn.response_id.md5]
+        updated = session.model_copy(update={"turns": turns, "message_ids": message_ids})
+        self.save(updated)
+        return updated, removed_turn
+
+    def save_existing(self, session: SessionFile) -> SessionFile:
+        self.save(session)
+        return session

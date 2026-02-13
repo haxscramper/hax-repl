@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable, Sequence
 
 import httpx
 
@@ -17,7 +17,23 @@ OPENROUTER_KEY_ENV = "HAXSCRAMPER_LLM_REPL_KEY"
 @dataclass(frozen=True)
 class ChatMessage:
     role: str
-    content: str
+    content: str | None = None
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list["ToolCall"] | None = None
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
+class ChatCompletionResult:
+    text: str
+    tool_calls: list[ToolCall]
 
 
 class OpenRouterClient:
@@ -36,7 +52,7 @@ class OpenRouterClient:
     def stream_chat(self, messages: list[ChatMessage]) -> Iterable[str]:
         request_payload = {
             "model": self._model_name,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": [_serialize_message(m) for m in messages],
             "stream": True,
         }
         headers = {
@@ -69,6 +85,59 @@ class OpenRouterClient:
                 if token:
                     yield token
 
+    def complete_chat_with_tools(
+        self,
+        messages: list[ChatMessage],
+        tool_specs: Sequence[dict[str, object]],
+    ) -> ChatCompletionResult:
+        request_payload: dict[str, Any] = {
+            "model": self._model_name,
+            "messages": [_serialize_message(m) for m in messages],
+            "stream": False,
+        }
+        if tool_specs:
+            request_payload["tools"] = list(tool_specs)
+            request_payload["tool_choice"] = "auto"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        response = httpx.post(
+            OPENROUTER_URL,
+            headers=headers,
+            json=request_payload,
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        choices = payload.get("choices", [])
+        if not choices:
+            return ChatCompletionResult(text="", tool_calls=[])
+        message = choices[0].get("message", {})
+        text = _extract_message_text(message)
+        tool_calls = _extract_tool_calls(message)
+        return ChatCompletionResult(text=text, tool_calls=tool_calls)
+
+
+def _serialize_message(message: ChatMessage) -> dict[str, object]:
+    payload: dict[str, object] = {"role": message.role}
+    if message.content is not None:
+        payload["content"] = message.content
+    if message.name is not None:
+        payload["name"] = message.name
+    if message.tool_call_id is not None:
+        payload["tool_call_id"] = message.tool_call_id
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.arguments_json},
+            }
+            for call in message.tool_calls
+        ]
+    return payload
+
 
 def _extract_content_delta(event: dict[str, object]) -> str:
     choices = event.get("choices")
@@ -92,3 +161,42 @@ def _extract_content_delta(event: dict[str, object]) -> str:
                     parts.append(text)
         return "".join(parts)
     return ""
+
+
+def _extract_message_text(message: object) -> str:
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return ""
+
+
+def _extract_tool_calls(message: object) -> list[ToolCall]:
+    if not isinstance(message, dict):
+        return []
+    raw_tool_calls = message.get("tool_calls")
+    if not isinstance(raw_tool_calls, list):
+        return []
+    calls: list[ToolCall] = []
+    for raw in raw_tool_calls:
+        if not isinstance(raw, dict):
+            continue
+        call_id = raw.get("id")
+        function_data = raw.get("function")
+        if not isinstance(call_id, str) or not isinstance(function_data, dict):
+            continue
+        name = function_data.get("name")
+        arguments = function_data.get("arguments")
+        if not isinstance(name, str) or not isinstance(arguments, str):
+            continue
+        calls.append(ToolCall(id=call_id, name=name, arguments_json=arguments))
+    return calls

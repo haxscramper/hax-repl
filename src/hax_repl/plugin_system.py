@@ -29,3 +29,9 @@ def load_plugins_or_fail(entrypoint_group: str) -> list[LoadedPlugin]:
         plugin_obj = ep.load()
         loaded.append(LoadedPlugin(group=entrypoint_group, name=ep.name, plugin=plugin_obj))
     return loaded
+
+
+def instantiate_plugin(plugin_obj: Any) -> Any:
+    if isinstance(plugin_obj, type):
+        return plugin_obj()
+    return plugin_obj

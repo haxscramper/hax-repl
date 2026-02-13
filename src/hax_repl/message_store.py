@@ -67,3 +67,8 @@ class MessageStore:
             if message is not None:
                 messages.append(message)
         return messages
+
+    def delete(self, context_id: ContextHashID) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM messages WHERE context_id = ?", (context_id.md5,))
+            conn.commit()
