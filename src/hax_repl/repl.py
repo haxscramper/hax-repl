@@ -127,7 +127,7 @@ def _interactive_function_call_decision(
     console.print("[dim]arguments:[/dim]")
     console.print(pretty_args)
 
-    answer = console.input("[cyan]Approve call?[/cyan] [y]es / [n]o / [m]anual-result: ").strip().lower()
+    answer = console.input("[cyan]Approve call?[/cyan] \\[y]es / \\[n]o / \\[m]anual-result: ").strip().lower()
     if answer.startswith("n"):
         reason = console.input("[cyan]Reject reason (optional):[/cyan] ").strip()
         status.start()
@@ -284,7 +284,6 @@ def _handle_command(
         return True
 
     if args[0] in {".exit", ".quit"}:
-        console.print("Bye.")
         return False
 
     if args[0] == ".help":
@@ -637,6 +636,8 @@ def _handle_command(
     console.print("[yellow]Unknown command. Use .help[/yellow]")
     return True
 
+def _end_repl(runtime: AppRuntime, console: Console) -> None:
+    console.print(f"EXITING REPL")
 
 def run_repl(runtime: AppRuntime) -> None:
     console = Console()
@@ -659,12 +660,15 @@ def run_repl(runtime: AppRuntime) -> None:
                 multiline=True,
                 default=default_text,
             )
+
         except (EOFError, KeyboardInterrupt):
-            console.print("Bye.")
+            _end_repl(runtime, console)
             return
+
         prompt_text = prompt_text.strip()
         if not prompt_text:
             continue
+
         if prompt_text.startswith("."):
             keep_running = _handle_command(
                 runtime=runtime,
@@ -673,7 +677,9 @@ def run_repl(runtime: AppRuntime) -> None:
                 pending_includes=pending_includes,
             )
             if not keep_running:
+                _end_repl(runtime, console)
                 return
+                
             continue
 
         pending_includes.clear()
