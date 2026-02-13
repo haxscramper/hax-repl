@@ -1,0 +1,1 @@
+"""Function provider plugin namespace."""

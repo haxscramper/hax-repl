@@ -1,0 +1,23 @@
+[project]
+name = "llm-repl2"
+version = "0.1.0"
+description = "POC LLM REPL with session persistence"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "prompt-toolkit>=3.0.51",
+    "pydantic>=2.11.7",
+    "pyyaml>=6.0.2",
+    "rich>=14.1.0",
+]
+
+[project.scripts]
+hax-repl = "hax_repl.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hax_repl"]
