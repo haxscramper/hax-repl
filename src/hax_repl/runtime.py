@@ -145,6 +145,15 @@ class AppRuntime:
     def _function_schema_hashes(self, refs: Sequence[EnabledFunction]) -> list[str]:
         return [ref.schema_hash for ref in refs]
 
+    def list_functions(self) -> list[EnabledFunction]:
+        return [
+            EnabledFunction(name=name, schema_hash=schema_hash)
+            for name, schema_hash in self._function_registry.list_with_schema_hashes()
+        ]
+
+    def invoke_function(self, function_name: str, arguments_json: str) -> str:
+        return self._function_registry.invoke_json(function_name, arguments_json)
+
     def _run_function_calling_loop(
         self,
         *,

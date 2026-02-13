@@ -4,6 +4,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
@@ -27,6 +28,8 @@ COMMANDS = [
     ".copy last-response",
     ".file",
     ".macro",
+    ".functions",
+    ".functions call",
 ]
 
 
@@ -180,6 +183,38 @@ def _handle_command(
         console.print("  .copy last-response")
         console.print("  .file <relative-or-absolute-path>")
         console.print("  .macro <text-with-macros>")
+        console.print("  .functions")
+        console.print("  .functions call <name> <json-args>")
+        return True
+
+    if args[0] == ".functions":
+        if len(args) == 1:
+            functions = runtime.list_functions()
+            if not functions:
+                console.print("[yellow]No functions loaded.[/yellow]")
+                return True
+            console.print("[bold]Loaded functions:[/bold]")
+            for function in functions:
+                console.print(f"  - {function.name} (schema_hash={function.schema_hash})")
+            return True
+        if len(args) >= 4 and args[1] == "call":
+            name = args[2]
+            arguments_json = command_text.split(name, 1)[1].strip()
+            if not arguments_json:
+                console.print("[yellow]Usage: .functions call <name> <json-args>[/yellow]")
+                return True
+            try:
+                result_json = runtime.invoke_function(name, arguments_json)
+            except Exception as exc:
+                console.print(f"[bold red]function call failed:[/bold red] {exc}")
+                return True
+            pretty = result_json
+            if len(pretty) > 4000:
+                pretty = textwrap.shorten(pretty, width=4000, placeholder=" ...[truncated]")
+            console.print("[green]Function result:[/green]")
+            console.print(pretty)
+            return True
+        console.print("[yellow]Usage: .functions OR .functions call <name> <json-args>[/yellow]")
         return True
 
     if args[0] == ".conversation":

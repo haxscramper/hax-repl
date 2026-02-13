@@ -15,3 +15,29 @@ Initial implementation of phases 0-2:
    - `uv sync`
 3. Start:
    - `uv run hax-repl --session my-test`
+
+### Function plugins quick start
+
+Example function-provider plugins are included and auto-loaded via entry points:
+
+- `example_functions` provider:
+  - `echo_text`
+  - `sum_numbers`
+  - `list_directory`
+  - `read_text_file`
+- `json_functions` provider:
+  - `pretty_json`
+- built-in provider:
+  - `python_eval`
+
+In REPL:
+
+- List loaded functions:
+  - `.functions`
+- Call function directly:
+  - `.functions call sum_numbers {"numbers":[1,2,3.5]}`
+  - `.functions call echo_text {"text":"hello","uppercase":true}`
+- Let model call tools automatically:
+  - `Use available tools to list files in the current directory and summarize them.`
+
+See `docs/plugins.md` for full plugin authoring and usage instructions.

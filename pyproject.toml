@@ -15,6 +15,10 @@ dependencies = [
 [project.scripts]
 hax-repl = "hax_repl.cli:main"
 
+[project.entry-points."hax_repl.function_providers"]
+example_functions = "hax_repl.plugins.functions.examples:ExampleFunctionProvider"
+json_functions = "hax_repl.plugins.functions.examples:JsonFunctionProvider"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

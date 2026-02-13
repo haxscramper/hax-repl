@@ -92,6 +92,14 @@ class FunctionRegistry:
             )
         return tools
 
+    def list_with_schema_hashes(
+        self, enabled_function_names: list[str] | None = None
+    ) -> list[tuple[str, str]]:
+        result: list[tuple[str, str]] = []
+        for spec in self.enabled_specs(enabled_function_names):
+            result.append((spec.name, self.schema_hash_for(spec)))
+        return result
+
 
 class PythonEvalArgs(BaseModel):
     expression: str
