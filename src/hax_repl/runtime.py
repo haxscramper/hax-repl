@@ -1,32 +1,52 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Callable, Literal, Sequence
 
 from hax_repl.agents import AgentPlugin, AgentRunState, DefaultInteractiveAgent
-from hax_repl.functions import (BuiltinFunctionProvider, FunctionProvider,
-                                FunctionRegistry)
-from hax_repl.hashing import (content_hash_for_prompt,
-                              content_hash_for_response, context_hash,
-                              split_thinking_blocks)
-from hax_repl.llm_client import (ChatCompletionResult, ChatMessage,
-                                 OpenRouterClient, ToolCall)
+from hax_repl.functions import BuiltinFunctionProvider, FunctionProvider, FunctionRegistry
+from hax_repl.hashing import (
+    content_hash_for_prompt,
+    content_hash_for_response,
+    context_hash,
+    split_thinking_blocks,
+)
+from hax_repl.llm_client import (
+    ChatCompletionResult,
+    ChatMessage,
+    OpenRouterClient,
+    ToolCall,
+)
 from hax_repl.macro import MacroExpander, MacroExpansionResult
-from hax_repl.mcp import (DescriptorMcpLoader, LocalClassMcpClientAdapter,
-                          McpClient, RegisteredMcpClient)
+from hax_repl.mcp import (
+    DescriptorMcpLoader,
+    LocalClassMcpClientAdapter,
+    McpClient,
+    RegisteredMcpClient,
+)
 from hax_repl.message_store import MessageStore
-from hax_repl.models import (AnyMessage, ContextHashID, EnabledFunction,
-                             FunctionCallRequest, FunctionCallResult,
-                             ModelName, PluginAgentMeta, PluginFunctionMeta,
-                             PluginMCPMeta, PluginRagMeta, PromptMessage,
-                             ResponseMessage, RoleName, SessionFile,
-                             SessionName)
-from hax_repl.plugin_system import (LoadedPlugin,
-                                    load_plugins_from_config_or_fail)
+from hax_repl.models import (
+    AnyMessage,
+    ContextHashID,
+    EnabledFunction,
+    FunctionCallRequest,
+    FunctionCallResult,
+    ModelName,
+    PluginAgentMeta,
+    PluginFunctionMeta,
+    PluginMCPMeta,
+    PluginRagMeta,
+    PromptMessage,
+    ResponseMessage,
+    RoleName,
+    SessionFile,
+    SessionName,
+)
+from hax_repl.plugin_system import load_plugins_from_config_or_fail, LoadedPlugin
 from hax_repl.rag import RagRegistry, RagResult
 from hax_repl.session_store import SessionStore
 
@@ -93,15 +113,12 @@ class AppRuntime:
 
         resolved_name: SessionName = self._session_store.resolve_session_name(
             session_name)
-        self._session: SessionFile = self._session_store.load_or_create(
-            resolved_name)
+        self._session: SessionFile = self._session_store.load_or_create(resolved_name)
         self._default_role = RoleName(value="user")
         self._default_agent = "default-agent"
 
     def _loaded_plugins_for(self, kind: str) -> list[LoadedPlugin]:
-        return [
-            plugin for plugin in self._loaded_plugins if plugin.kind == kind
-        ]
+        return [plugin for plugin in self._loaded_plugins if plugin.kind == kind]
 
     def _build_function_registry(self) -> FunctionRegistry:
         registry = FunctionRegistry()
@@ -111,12 +128,10 @@ class AppRuntime:
 
         for loaded in self._loaded_plugins_for("function_provider"):
             if not isinstance(loaded.metadata, PluginFunctionMeta):
-                raise RuntimeError(
-                    f"Invalid function plugin metadata in {loaded.path}")
+                raise RuntimeError(f"Invalid function plugin metadata in {loaded.path}")
             provider_candidate = loaded.description.get_plugin()
             if not hasattr(provider_candidate, "functions"):
-                raise RuntimeError(
-                    f"Invalid function provider plugin: {loaded.name}")
+                raise RuntimeError(f"Invalid function provider plugin: {loaded.name}")
             provider = provider_candidate
             functions = provider.functions()
             for function_spec in functions:
@@ -126,14 +141,12 @@ class AppRuntime:
     def _register_rag_plugins(self) -> None:
         for loaded in self._loaded_plugins_for("rag_provider"):
             if not isinstance(loaded.metadata, PluginRagMeta):
-                raise RuntimeError(
-                    f"Invalid RAG plugin metadata in {loaded.path}")
+                raise RuntimeError(f"Invalid RAG plugin metadata in {loaded.path}")
             provider_candidate = loaded.description.get_plugin()
             provider_obj = provider_candidate
             if not hasattr(provider_obj, "list_indices") or not hasattr(
                     provider_obj, "query"):
-                raise RuntimeError(
-                    f"Invalid RAG provider plugin: {loaded.name}")
+                raise RuntimeError(f"Invalid RAG provider plugin: {loaded.name}")
             self._rag_registry.register(loaded.name, provider_obj)
 
     def _build_agent_registry(self) -> dict[str, AgentPlugin]:
@@ -142,8 +155,7 @@ class AppRuntime:
         agents[default_agent.agent_name()] = default_agent
         for loaded in self._loaded_plugins_for("agent"):
             if not isinstance(loaded.metadata, PluginAgentMeta):
-                raise RuntimeError(
-                    f"Invalid agent plugin metadata in {loaded.path}")
+                raise RuntimeError(f"Invalid agent plugin metadata in {loaded.path}")
             candidate = loaded.description.get_plugin()
             plugin_obj = candidate
             if not hasattr(plugin_obj, "agent_name") or not hasattr(
@@ -156,13 +168,11 @@ class AppRuntime:
     def _register_mcp_plugins(self) -> None:
         for loaded in self._loaded_plugins_for("mcp_client"):
             if not isinstance(loaded.metadata, PluginMCPMeta):
-                raise RuntimeError(
-                    f"Invalid MCP plugin metadata in {loaded.path}")
+                raise RuntimeError(f"Invalid MCP plugin metadata in {loaded.path}")
             candidate = loaded.description.get_plugin()
             client_obj = candidate
             if hasattr(client_obj, "list_tools") and hasattr(
-                    client_obj, "invoke") and hasattr(client_obj,
-                                                      "client_name"):
+                    client_obj, "invoke") and hasattr(client_obj, "client_name"):
                 self._register_mcp_client(client_obj)
                 continue
             if isinstance(client_obj, LocalClassMcpClientAdapter):
@@ -199,8 +209,7 @@ class AppRuntime:
     def next_query_index(self) -> int:
         return len(self._session.turns) + 1
 
-    def _message_for_context_id(
-            self, context_id: ContextHashID) -> AnyMessage | None:
+    def _message_for_context_id(self, context_id: ContextHashID) -> AnyMessage | None:
         return self._message_store.get(context_id)
 
     def last_prompt_message(self) -> PromptMessage | None:
@@ -225,43 +234,36 @@ class AppRuntime:
             prompt = self._message_store.get(turn.prompt_id)
             if isinstance(prompt, PromptMessage):
                 messages.append(
-                    ChatMessage(role=prompt.role.value,
-                                content=prompt.augmented_prompt))
+                    ChatMessage(role=prompt.role.value, content=prompt.augmented_prompt))
             if turn.response_id is not None:
                 response = self._message_store.get(turn.response_id)
                 if isinstance(response, ResponseMessage):
-                    messages.append(
-                        ChatMessage(role="assistant", content=response.text))
+                    messages.append(ChatMessage(role="assistant", content=response.text))
         return messages
 
     def _enabled_function_refs(
-            self, enabled_function_names: Sequence[str] | None
-    ) -> list[EnabledFunction]:
+            self, enabled_function_names: Sequence[str] | None) -> list[EnabledFunction]:
         specs = self._function_registry.enabled_specs(
             list(enabled_function_names) if enabled_function_names else None)
         return [
-            EnabledFunction(
-                name=spec.name,
-                schema_hash=self._function_registry.schema_hash_for(spec))
+            EnabledFunction(name=spec.name,
+                            schema_hash=self._function_registry.schema_hash_for(spec))
             for spec in specs
         ]
 
-    def _function_schema_hashes(self,
-                                refs: Sequence[EnabledFunction]) -> list[str]:
+    def _function_schema_hashes(self, refs: Sequence[EnabledFunction]) -> list[str]:
         return [ref.schema_hash for ref in refs]
 
     def list_functions(self) -> list[EnabledFunction]:
         return [
-            EnabledFunction(name=name, schema_hash=schema_hash) for name,
-            schema_hash in self._function_registry.list_with_schema_hashes()
+            EnabledFunction(name=name, schema_hash=schema_hash)
+            for name, schema_hash in self._function_registry.list_with_schema_hashes()
         ]
 
     def invoke_function(self, function_name: str, arguments_json: str) -> str:
-        return self._function_registry.invoke_json(function_name,
-                                                   arguments_json)
+        return self._function_registry.invoke_json(function_name, arguments_json)
 
-    def _expand_prompt_with_macros(
-            self, original_prompt: str) -> MacroExpansionResult:
+    def _expand_prompt_with_macros(self, original_prompt: str) -> MacroExpansionResult:
         return self._macro_expander.expand(
             original_prompt,
             rag_query=lambda provider, index, query: self.rag_query(
@@ -269,10 +271,7 @@ class AppRuntime:
         )
 
     def list_mcp_clients(self) -> list[RegisteredMcpClient]:
-        return [
-            self._mcp_clients[name]
-            for name in sorted(self._mcp_clients.keys())
-        ]
+        return [self._mcp_clients[name] for name in sorted(self._mcp_clients.keys())]
 
     def list_rag_providers(self) -> list[str]:
         return self._rag_registry.list_providers()
@@ -314,8 +313,7 @@ class AppRuntime:
                         arguments_json: str) -> str:
         if client_name not in self._mcp_clients:
             raise KeyError(f"Unknown MCP client: {client_name}")
-        return self._mcp_clients[client_name].client.invoke(
-            tool_name, arguments_json)
+        return self._mcp_clients[client_name].client.invoke(tool_name, arguments_json)
 
     def list_agents(self) -> list[str]:
         return sorted(self._agent_plugins.keys())
@@ -327,9 +325,7 @@ class AppRuntime:
                         max_steps: int = 8) -> AgentRunState:
         if agent_name not in self._agent_plugins:
             raise KeyError(f"Unknown agent: {agent_name}")
-        state = AgentRunState(agent_name=agent_name,
-                              goal=goal,
-                              max_steps=max_steps)
+        state = AgentRunState(agent_name=agent_name, goal=goal, max_steps=max_steps)
         self._active_agent_run = state
         return state
 
@@ -355,9 +351,8 @@ class AppRuntime:
         self,
         *,
         on_visible_token: Callable[[str], None] | None = None,
-        on_function_call_decision: Callable[[FunctionCallRequest],
-                                            FunctionCallDecision]
-        | None = None,
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
+        None = None,
     ) -> RuntimeResponse | None:
         state = self._active_agent_run
         if state is None or state.done or state.paused:
@@ -389,22 +384,19 @@ class AppRuntime:
         *,
         llm_messages: list[ChatMessage],
         enabled_function_names: list[str],
-        on_function_call_decision: Callable[[FunctionCallRequest],
-                                            FunctionCallDecision]
-        | None = None,
-    ) -> tuple[ChatCompletionResult, list[FunctionCallRequest],
-               list[FunctionCallResult]]:
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
+        None = None,
+    ) -> tuple[ChatCompletionResult, list[FunctionCallRequest], list[FunctionCallResult]]:
         messages = list(llm_messages)
-        tool_specs = self._function_registry.to_tool_specs(
-            enabled_function_names)
+        tool_specs = self._function_registry.to_tool_specs(enabled_function_names)
         all_requests: list[FunctionCallRequest] = []
         all_results: list[FunctionCallResult] = []
         max_rounds = 6
         last_result = ChatCompletionResult(text="", tool_calls=[])
 
         for _ in range(max_rounds):
-            completion = self._client.complete_chat_with_tools(
-                messages=messages, tool_specs=tool_specs)
+            completion = self._client.complete_chat_with_tools(messages=messages,
+                                                               tool_specs=tool_specs)
             last_result = completion
             if not completion.tool_calls:
                 return completion, all_requests, all_results
@@ -416,18 +408,16 @@ class AppRuntime:
                     tool_calls=completion.tool_calls,
                 ))
             for tool_call in completion.tool_calls:
-                request = FunctionCallRequest(
-                    name=tool_call.name,
-                    arguments_json=tool_call.arguments_json)
+                request = FunctionCallRequest(name=tool_call.name,
+                                              arguments_json=tool_call.arguments_json)
                 all_requests.append(request)
                 decision = (on_function_call_decision(request)
                             if on_function_call_decision is not None else
                             FunctionCallDecision(action="approve"))
-                result_json = self._resolve_tool_call_result(
-                    tool_call=tool_call, decision=decision)
+                result_json = self._resolve_tool_call_result(tool_call=tool_call,
+                                                             decision=decision)
                 all_results.append(
-                    FunctionCallResult(name=tool_call.name,
-                                       result_json=result_json))
+                    FunctionCallResult(name=tool_call.name, result_json=result_json))
                 messages.append(
                     ChatMessage(
                         role="tool",
@@ -445,14 +435,10 @@ class AppRuntime:
         if decision.action == "reject":
             return json.dumps(
                 {
-                    "ok":
-                    False,
-                    "rejected":
-                    True,
-                    "tool_name":
-                    tool_call.name,
-                    "reason":
-                    decision.rejection_reason.strip() or "Rejected by user.",
+                    "ok": False,
+                    "rejected": True,
+                    "tool_name": tool_call.name,
+                    "reason": decision.rejection_reason.strip() or "Rejected by user.",
                 },
                 ensure_ascii=True,
             )
@@ -475,8 +461,8 @@ class AppRuntime:
 
     def _invoke_tool_with_failure_payload(self, tool_call: ToolCall) -> str:
         try:
-            return self._function_registry.invoke_json(
-                tool_call.name, tool_call.arguments_json)
+            return self._function_registry.invoke_json(tool_call.name,
+                                                       tool_call.arguments_json)
         except Exception as exc:
             LOGGER.exception("Function call failed: %s", tool_call.name)
             return json.dumps(
@@ -493,9 +479,8 @@ class AppRuntime:
         original_prompt: str,
         enabled_functions: Sequence[str] | None = None,
         on_visible_token: Callable[[str], None] | None = None,
-        on_function_call_decision: Callable[[FunctionCallRequest],
-                                            FunctionCallDecision]
-        | None = None,
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
+        None = None,
     ) -> RuntimeResponse:
         enabled_function_refs = self._enabled_function_refs(enabled_functions)
         included_context_ids = [cid.md5 for cid in self._session.message_ids]
@@ -515,8 +500,7 @@ class AppRuntime:
         prompt_context_id = context_hash(
             content_hash=prompt_content_id,
             model_name=self._model_name,
-            function_schema_hashes=self._function_schema_hashes(
-                enabled_function_refs),
+            function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
             rag_provenance=rag_provenance,
         )
         prompt_message = PromptMessage(
@@ -525,9 +509,7 @@ class AppRuntime:
             role=self._default_role,
             original_prompt=original_prompt,
             augmented_prompt=augmented_prompt,
-            included_context=[
-                ContextHashID(md5=cid) for cid in included_context_ids
-            ],
+            included_context=[ContextHashID(md5=cid) for cid in included_context_ids],
             enabled_functions=enabled_function_refs,
         )
 
@@ -536,8 +518,8 @@ class AppRuntime:
         query_chars = sum(len(message.content) for message in llm_messages)
 
         self._message_store.upsert(prompt_message)
-        self._session = self._session_store.append_prompt(
-            self._session, prompt_context_id)
+        self._session = self._session_store.append_prompt(self._session,
+                                                          prompt_context_id)
 
         started = monotonic()
         first_token_at: float | None = None
@@ -606,8 +588,7 @@ class AppRuntime:
         response_context_id = context_hash(
             content_hash=response_content_id,
             model_name=self._model_name,
-            function_schema_hashes=self._function_schema_hashes(
-                enabled_function_refs),
+            function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
             rag_provenance=rag_provenance,
         )
         response_message = ResponseMessage(
@@ -632,11 +613,10 @@ class AppRuntime:
         if first_token_at is None:
             model_thinking_ms = 0
         elif first_visible_token_at is not None:
-            model_thinking_ms = max(
-                int((first_visible_token_at - first_token_at) * 1000), 0)
+            model_thinking_ms = max(int((first_visible_token_at - first_token_at) * 1000),
+                                    0)
         else:
-            model_thinking_ms = max(
-                int((completed_at - first_token_at) * 1000), 0)
+            model_thinking_ms = max(int((completed_at - first_token_at) * 1000), 0)
         stats = QueryStats(
             elapsed_ms=elapsed_ms,
             query_chars=query_chars,
@@ -682,14 +662,12 @@ class AppRuntime:
             role=self._default_role,
             original_prompt=text,
             augmented_prompt=augmented_prompt,
-            included_context=[
-                ContextHashID(md5=cid) for cid in included_context_ids
-            ],
+            included_context=[ContextHashID(md5=cid) for cid in included_context_ids],
             enabled_functions=[],
         )
         self._message_store.upsert(prompt_message)
-        self._session = self._session_store.append_prompt(
-            self._session, prompt_context_id)
+        self._session = self._session_store.append_prompt(self._session,
+                                                          prompt_context_id)
         return prompt_message
 
     def expand_prompt_macros(self, text: str) -> str:
@@ -722,9 +700,8 @@ class AppRuntime:
     def generate_again(
         self,
         on_visible_token: Callable[[str], None] | None = None,
-        on_function_call_decision: Callable[[FunctionCallRequest],
-                                            FunctionCallDecision]
-        | None = None,
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
+        None = None,
     ) -> RuntimeResponse | None:
         last_prompt = self.last_prompt_message()
         if last_prompt is None:

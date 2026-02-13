@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import importlib
 import inspect
 import json
-import re
-from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, create_model, Field
 
 from hax_repl.functions import FunctionSpec
 
@@ -49,8 +49,7 @@ class LocalClassMcpClientAdapter:
         self._obj = obj
         self._methods: dict[str, Any] = {
             method_name: method
-            for method_name, method in inspect.getmembers(obj,
-                                                          predicate=callable)
+            for method_name, method in inspect.getmembers(obj, predicate=callable)
             if not method_name.startswith("_")
         }
         self._function_name_to_method_name: dict[str, str] = {}
@@ -82,9 +81,8 @@ class LocalClassMcpClientAdapter:
     def _make_impl(self, method_name: str):
 
         def _impl(args_model: BaseModel) -> Any:
-            return self.invoke(
-                method_name,
-                args_model.model_dump().get("arguments_json", "{}"))
+            return self.invoke(method_name,
+                               args_model.model_dump().get("arguments_json", "{}"))
 
         return _impl
 

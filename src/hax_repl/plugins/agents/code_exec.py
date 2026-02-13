@@ -20,8 +20,7 @@ class CodeExecAgentPlugin(AgentPlugin):
                 "Use tools when useful. Keep output concise and actionable. "
                 "When done, include <agent_done>.")
 
-    def should_stop(self, *, response_text: str, step_index: int,
-                    max_steps: int) -> bool:
+    def should_stop(self, *, response_text: str, step_index: int, max_steps: int) -> bool:
         return "<agent_done>" in response_text or step_index + 1 >= max_steps
 
 

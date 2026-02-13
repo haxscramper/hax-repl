@@ -5,8 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from hax_repl.models import (ContextHashID, SessionFile, SessionName,
-                             SessionTurn)
+from hax_repl.models import ContextHashID, SessionFile, SessionName, SessionTurn
 
 
 class SessionStore:
@@ -61,42 +60,33 @@ class SessionStore:
         self.save(updated)
         return updated
 
-    def attach_response_to_last_turn(
-            self, session: SessionFile,
-            response_context_id: ContextHashID) -> SessionFile:
+    def attach_response_to_last_turn(self, session: SessionFile,
+                                     response_context_id: ContextHashID) -> SessionFile:
         if not session.turns:
             raise RuntimeError("Cannot attach response: session has no turns.")
         turns = list(session.turns)
-        turns[-1] = turns[-1].model_copy(
-            update={"response_id": response_context_id})
-        updated = session.model_copy(
-            update={
-                "turns": turns,
-                "message_ids": [*session.message_ids, response_context_id],
-            })
+        turns[-1] = turns[-1].model_copy(update={"response_id": response_context_id})
+        updated = session.model_copy(update={
+            "turns": turns,
+            "message_ids": [*session.message_ids, response_context_id],
+        })
         self.save(updated)
         return updated
 
-    def remove_last_turn(
-            self,
-            session: SessionFile) -> tuple[SessionFile, SessionTurn | None]:
+    def remove_last_turn(self,
+                         session: SessionFile) -> tuple[SessionFile, SessionTurn | None]:
         if not session.turns:
             return session, None
         turns = list(session.turns)
         removed_turn = turns.pop()
         message_ids = [
-            cid for cid in session.message_ids
-            if cid.md5 != removed_turn.prompt_id.md5
+            cid for cid in session.message_ids if cid.md5 != removed_turn.prompt_id.md5
         ]
         if removed_turn.response_id is not None:
             message_ids = [
-                cid for cid in message_ids
-                if cid.md5 != removed_turn.response_id.md5
+                cid for cid in message_ids if cid.md5 != removed_turn.response_id.md5
             ]
-        updated = session.model_copy(update={
-            "turns": turns,
-            "message_ids": message_ids
-        })
+        updated = session.model_copy(update={"turns": turns, "message_ids": message_ids})
         self.save(updated)
         return updated, removed_turn
 

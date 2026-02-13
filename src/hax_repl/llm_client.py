@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import logging
 import os
-from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
 import httpx
@@ -80,8 +80,7 @@ class OpenRouterClient:
                 try:
                     event = json.loads(data)
                 except json.JSONDecodeError:
-                    LOGGER.warning(
-                        "Skipping malformed SSE chunk from OpenRouter.")
+                    LOGGER.warning("Skipping malformed SSE chunk from OpenRouter.")
                     continue
                 token = _extract_content_delta(event)
                 if token:

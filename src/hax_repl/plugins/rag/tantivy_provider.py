@@ -6,7 +6,7 @@ from typing import Sequence
 from hax_repl.models import PluginRagMeta
 from hax_repl.plugin_system import PluginDescriptor
 from hax_repl.plugins.rag._chunking import chunk_text
-from hax_repl.rag import RagChunk, RagProvider, RagResult, options_get_int
+from hax_repl.rag import options_get_int, RagChunk, RagProvider, RagResult
 
 
 class TantivyFullTextRagProvider(RagProvider):
@@ -14,8 +14,7 @@ class TantivyFullTextRagProvider(RagProvider):
     def __init__(self) -> None:
         import tantivy
 
-        base_dir = Path.home(
-        ) / ".local" / "share" / "haxllm" / "rag" / "tantivy"
+        base_dir = Path.home() / ".local" / "share" / "haxllm" / "rag" / "tantivy"
         base_dir.mkdir(parents=True, exist_ok=True)
         self._base_dir = base_dir
         self._tantivy = tantivy
@@ -36,14 +35,10 @@ class TantivyFullTextRagProvider(RagProvider):
         chunks: list[RagChunk] = []
         for score, address in top_docs:
             doc = searcher.doc(address)
-            source_id = str(
-                doc.get_first("source_id") or f"{index_name}:{address}")
+            source_id = str(doc.get_first("source_id") or f"{index_name}:{address}")
             text = str(doc.get_first("body") or "")
-            chunks.append(
-                RagChunk(source_id=source_id, text=text, score=float(score)))
-        return RagResult(provider=self._provider_name,
-                         index=index_name,
-                         chunks=chunks)
+            chunks.append(RagChunk(source_id=source_id, text=text, score=float(score)))
+        return RagResult(provider=self._provider_name, index=index_name, chunks=chunks)
 
     def update_index(self,
                      index_name: str,
@@ -60,10 +55,7 @@ class TantivyFullTextRagProvider(RagProvider):
             text = path.read_text(encoding="utf-8", errors="replace")
             for idx, chunk in enumerate(
                     chunk_text(text, chunk_size=chunk_size, overlap=overlap)):
-                writer.add_document({
-                    "source_id": f"{path}:{idx}",
-                    "body": chunk
-                })
+                writer.add_document({"source_id": f"{path}:{idx}", "body": chunk})
         writer.commit()
 
     def _open_or_create_index(self, index_name: str):

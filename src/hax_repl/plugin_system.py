@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import importlib.util
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
@@ -64,8 +64,7 @@ def instantiate_plugin(plugin_obj: Any) -> Any:
 
 def load_plugins_from_config_or_fail(
         config_path: Path,
-        interpolation_vars: dict[str, str] | None = None
-) -> list[LoadedPlugin]:
+        interpolation_vars: dict[str, str] | None = None) -> list[LoadedPlugin]:
     payload = json.loads(config_path.read_text(encoding="utf-8"))
     config = PluginLoaderConfig.model_validate(payload)
     variables = _default_interpolation_vars(config_path)
@@ -76,8 +75,7 @@ def load_plugins_from_config_or_fail(
     for plugin_ref in config.plugins:
         resolved_path = _resolve_plugin_path(plugin_ref.path, variables)
         description = _load_plugin_description_from_file_or_fail(resolved_path)
-        metadata = _validate_plugin_metadata(description.get_metadata(),
-                                             resolved_path)
+        metadata = _validate_plugin_metadata(description.get_metadata(), resolved_path)
         loaded.append(
             LoadedPlugin(
                 kind=metadata.kind,
@@ -89,8 +87,7 @@ def load_plugins_from_config_or_fail(
     return loaded
 
 
-def _load_plugin_description_from_file_or_fail(
-        path: Path) -> PluginDescription:
+def _load_plugin_description_from_file_or_fail(path: Path) -> PluginDescription:
     if not path.exists():
         raise RuntimeError(f"Plugin file not found: {path}")
     if not path.is_file():
@@ -99,21 +96,18 @@ def _load_plugin_description_from_file_or_fail(
     module_name = _module_name_for_plugin_path(path)
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(
-            f"Unable to create import spec for plugin file: {path}")
+        raise RuntimeError(f"Unable to create import spec for plugin file: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
     register = getattr(module, "register", None)
     if not callable(register):
-        raise RuntimeError(
-            f"Plugin file must define callable register(): {path}")
+        raise RuntimeError(f"Plugin file must define callable register(): {path}")
 
     description = register()
     if not hasattr(description, "get_plugin") or not callable(
             getattr(description, "get_plugin")):
-        raise RuntimeError(
-            f"register() must return an object with get_plugin(): {path}")
+        raise RuntimeError(f"register() must return an object with get_plugin(): {path}")
     if not hasattr(description, "get_metadata") or not callable(
             getattr(description, "get_metadata")):
         raise RuntimeError(
@@ -126,12 +120,10 @@ def _validate_plugin_metadata(metadata: Any, path: Path) -> PluginMetadata:
     try:
         return adapter.validate_python(metadata)
     except Exception as exc:
-        raise RuntimeError(
-            f"Invalid plugin metadata in {path}: {exc}") from exc
+        raise RuntimeError(f"Invalid plugin metadata in {path}: {exc}") from exc
 
 
-def _resolve_plugin_path(raw_path: str, interpolation_vars: dict[str,
-                                                                 str]) -> Path:
+def _resolve_plugin_path(raw_path: str, interpolation_vars: dict[str, str]) -> Path:
     try:
         formatted = raw_path.format_map(interpolation_vars)
     except KeyError as exc:
@@ -143,8 +135,7 @@ def _resolve_plugin_path(raw_path: str, interpolation_vars: dict[str,
 
 
 def _default_interpolation_vars(config_path: Path) -> dict[str, str]:
-    repo_root = _find_repo_root(
-        config_path.parent) or config_path.parent.resolve()
+    repo_root = _find_repo_root(config_path.parent) or config_path.parent.resolve()
     return {
         "repo": str(repo_root),
         "config_dir": str(config_path.parent.resolve()),

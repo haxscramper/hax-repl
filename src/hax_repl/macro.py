@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import platform
 import re
 import shlex
-from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from hax_repl.rag import RagResult
@@ -44,8 +44,7 @@ class MacroExpander:
             return body
 
         expanded = MACRO_PATTERN.sub(_replace, prompt)
-        return MacroExpansionResult(expanded_text=expanded,
-                                    rag_records=rag_records)
+        return MacroExpansionResult(expanded_text=expanded, rag_records=rag_records)
 
     def _expand_rag_macro(
         self,
@@ -78,7 +77,6 @@ class MacroExpander:
         ]
         for chunk in result.chunks:
             lines.append(
-                f"- [{chunk.source_id}] score={chunk.score:.4f} text={chunk.text[:240]}"
-            )
+                f"- [{chunk.source_id}] score={chunk.score:.4f} text={chunk.text[:240]}")
         lines.append("</rag>")
         return "\n".join(lines)

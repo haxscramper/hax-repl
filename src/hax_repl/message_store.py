@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
+import sqlite3
 from typing import Sequence
 
-from hax_repl.models import (AnyMessage, ContextHashID, PromptMessage,
-                             ResponseMessage)
+from hax_repl.models import AnyMessage, ContextHashID, PromptMessage, ResponseMessage
 
 
 class MessageStore:
@@ -50,7 +49,7 @@ class MessageStore:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT kind, payload_json FROM messages WHERE context_id = ?",
-                (context_id.md5, ),
+                (context_id.md5,),
             ).fetchone()
         if row is None:
             return None
@@ -60,8 +59,7 @@ class MessageStore:
             return ResponseMessage.model_validate_json(row["payload_json"])
         raise RuntimeError(f"Unknown message kind in sqlite: {row['kind']}")
 
-    def get_many(self,
-                 context_ids: Sequence[ContextHashID]) -> list[AnyMessage]:
+    def get_many(self, context_ids: Sequence[ContextHashID]) -> list[AnyMessage]:
         messages: list[AnyMessage] = []
         for context_id in context_ids:
             message = self.get(context_id)
@@ -71,6 +69,5 @@ class MessageStore:
 
     def delete(self, context_id: ContextHashID) -> None:
         with self._connect() as conn:
-            conn.execute("DELETE FROM messages WHERE context_id = ?",
-                         (context_id.md5, ))
+            conn.execute("DELETE FROM messages WHERE context_id = ?", (context_id.md5,))
             conn.commit()

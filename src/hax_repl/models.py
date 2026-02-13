@@ -55,8 +55,7 @@ class ResponseMessage(BaseModel):
     in_response_to: ContextHashID
     text: str
     function_calls: Sequence[FunctionCallRequest] = Field(default_factory=list)
-    function_results: Sequence[FunctionCallResult] = Field(
-        default_factory=list)
+    function_results: Sequence[FunctionCallResult] = Field(default_factory=list)
     thinking_text: str = ""
 
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import re
-from dataclasses import dataclass
 from typing import Any, Callable, Generic, Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -40,14 +40,11 @@ class FunctionRegistry:
         if not FUNCTION_NAME_PATTERN.match(function_spec.name):
             raise ValueError(
                 "Invalid function name "
-                f"'{function_spec.name}'. Must match {FUNCTION_NAME_PATTERN.pattern}"
-            )
+                f"'{function_spec.name}'. Must match {FUNCTION_NAME_PATTERN.pattern}")
         self._functions[function_spec.name] = function_spec
 
     def all_specs(self) -> list[FunctionSpec[BaseModel, Any]]:
-        return [
-            self._functions[name] for name in sorted(self._functions.keys())
-        ]
+        return [self._functions[name] for name in sorted(self._functions.keys())]
 
     def names(self) -> list[str]:
         return sorted(self._functions.keys())
@@ -68,8 +65,7 @@ class FunctionRegistry:
             specs.append(self.get(name))
         return specs
 
-    def schema_hash_for(self, function_spec: FunctionSpec[BaseModel,
-                                                          Any]) -> str:
+    def schema_hash_for(self, function_spec: FunctionSpec[BaseModel, Any]) -> str:
         payload = {
             "name": function_spec.name,
             "description": function_spec.description,
@@ -96,9 +92,8 @@ class FunctionRegistry:
         return json.dumps(result, ensure_ascii=True)
 
     def to_tool_specs(
-        self,
-        enabled_function_names: list[str] | None = None
-    ) -> list[dict[str, object]]:
+            self,
+            enabled_function_names: list[str] | None = None) -> list[dict[str, object]]:
         tools: list[dict[str, object]] = []
         for spec in self.enabled_specs(enabled_function_names):
             tools.append({
@@ -112,9 +107,8 @@ class FunctionRegistry:
         return tools
 
     def list_with_schema_hashes(
-        self,
-        enabled_function_names: list[str] | None = None
-    ) -> list[tuple[str, str]]:
+            self,
+            enabled_function_names: list[str] | None = None) -> list[tuple[str, str]]:
         result: list[tuple[str, str]] = []
         for spec in self.enabled_specs(enabled_function_names):
             result.append((spec.name, self.schema_hash_for(spec)))
@@ -143,8 +137,7 @@ class BuiltinFunctionProvider:
         return [
             FunctionSpec(
                 name="python_eval",
-                description=
-                "Evaluate a Python expression and return repr(result).",
+                description="Evaluate a Python expression and return repr(result).",
                 args_model=PythonEvalArgs,
                 result_model=PythonEvalResult,
                 impl=_python_eval_impl,

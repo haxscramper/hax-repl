@@ -13,8 +13,7 @@ class AgentPlugin(Protocol):
                           step_history: list[str]) -> str:
         ...
 
-    def should_stop(self, *, response_text: str, step_index: int,
-                    max_steps: int) -> bool:
+    def should_stop(self, *, response_text: str, step_index: int, max_steps: int) -> bool:
         ...
 
 
@@ -46,8 +45,7 @@ class DefaultInteractiveAgent:
                 "Produce the next concise action/result. "
                 "If the goal is complete, include the marker <agent_done>.")
 
-    def should_stop(self, *, response_text: str, step_index: int,
-                    max_steps: int) -> bool:
+    def should_stop(self, *, response_text: str, step_index: int, max_steps: int) -> bool:
         if "<agent_done>" in response_text:
             return True
         return step_index + 1 >= max_steps
