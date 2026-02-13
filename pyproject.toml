@@ -25,3 +25,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hax_repl"]
+
+[dependency-groups]
+dev = [
+    "isort>=7.0.0",
+]

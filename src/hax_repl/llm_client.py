@@ -37,6 +37,7 @@ class ChatCompletionResult:
 
 
 class OpenRouterClient:
+
     def __init__(self, model_name: str) -> None:
         self._model_name = model_name
         self._api_key = os.getenv(OPENROUTER_KEY_ENV, "").strip()
@@ -60,11 +61,11 @@ class OpenRouterClient:
             "Content-Type": "application/json",
         }
         with httpx.stream(
-            "POST",
-            OPENROUTER_URL,
-            headers=headers,
-            json=request_payload,
-            timeout=120.0,
+                "POST",
+                OPENROUTER_URL,
+                headers=headers,
+                json=request_payload,
+                timeout=120.0,
         ) as response:
             _raise_for_status_with_details(response)
             for raw_line in response.iter_lines():
@@ -79,7 +80,8 @@ class OpenRouterClient:
                 try:
                     event = json.loads(data)
                 except json.JSONDecodeError:
-                    LOGGER.warning("Skipping malformed SSE chunk from OpenRouter.")
+                    LOGGER.warning(
+                        "Skipping malformed SSE chunk from OpenRouter.")
                     continue
                 token = _extract_content_delta(event)
                 if token:
@@ -128,14 +130,14 @@ def _serialize_message(message: ChatMessage) -> dict[str, object]:
     if message.tool_call_id is not None:
         payload["tool_call_id"] = message.tool_call_id
     if message.tool_calls:
-        payload["tool_calls"] = [
-            {
-                "id": call.id,
-                "type": "function",
-                "function": {"name": call.name, "arguments": call.arguments_json},
-            }
-            for call in message.tool_calls
-        ]
+        payload["tool_calls"] = [{
+            "id": call.id,
+            "type": "function",
+            "function": {
+                "name": call.name,
+                "arguments": call.arguments_json
+            },
+        } for call in message.tool_calls]
     return payload
 
 
@@ -210,5 +212,4 @@ def _raise_for_status_with_details(response: httpx.Response) -> None:
         detail = snippet.strip() or "<empty response body>"
         raise RuntimeError(
             f"OpenRouter request failed with status={response.status_code}. "
-            f"Response body: {detail}"
-        ) from exc
+            f"Response body: {detail}") from exc

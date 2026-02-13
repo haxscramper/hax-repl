@@ -26,7 +26,10 @@ def configure_logging() -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="HAX LLM REPL")
-    parser.add_argument("--session", type=str, default=None, help="Session name")
+    parser.add_argument("--session",
+                        type=str,
+                        default=None,
+                        help="Session name")
     parser.add_argument(
         "--model",
         type=str,
@@ -48,7 +51,8 @@ def main() -> None:
         model_name=args.model,
         plugins_config_path=args.plugins_config,
     )
-    logging.getLogger(__name__).info("Starting hax-repl session=%s log_file=%s", args.session, log_file)
+    logging.getLogger(__name__).info(
+        "Starting hax-repl session=%s log_file=%s", args.session, log_file)
     run_repl(runtime)
 
 

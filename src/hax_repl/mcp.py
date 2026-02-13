@@ -24,11 +24,15 @@ class McpClientDescriptor(BaseModel):
 
 
 class McpClient(Protocol):
-    def client_name(self) -> str: ...
 
-    def list_tools(self) -> list[FunctionSpec[BaseModel, Any]]: ...
+    def client_name(self) -> str:
+        ...
 
-    def invoke(self, tool_name: str, arguments_json: str) -> str: ...
+    def list_tools(self) -> list[FunctionSpec[BaseModel, Any]]:
+        ...
+
+    def invoke(self, tool_name: str, arguments_json: str) -> str:
+        ...
 
 
 @dataclass(frozen=True)
@@ -39,12 +43,14 @@ class RegisteredMcpClient:
 
 
 class LocalClassMcpClientAdapter:
+
     def __init__(self, name: str, obj: object) -> None:
         self._name = name
         self._obj = obj
         self._methods: dict[str, Any] = {
             method_name: method
-            for method_name, method in inspect.getmembers(obj, predicate=callable)
+            for method_name, method in inspect.getmembers(obj,
+                                                          predicate=callable)
             if not method_name.startswith("_")
         }
         self._function_name_to_method_name: dict[str, str] = {}
@@ -70,13 +76,15 @@ class LocalClassMcpClientAdapter:
                     args_model=args_model,
                     result_model=None,
                     impl=self._make_impl(method_name),
-                )
-            )
+                ))
         return tools
 
     def _make_impl(self, method_name: str):
+
         def _impl(args_model: BaseModel) -> Any:
-            return self.invoke(method_name, args_model.model_dump().get("arguments_json", "{}"))
+            return self.invoke(
+                method_name,
+                args_model.model_dump().get("arguments_json", "{}"))
 
         return _impl
 
@@ -96,6 +104,7 @@ class LocalClassMcpClientAdapter:
 
 
 class DescriptorMcpLoader:
+
     def load(self, path: Path) -> LocalClassMcpClientAdapter:
         payload = json.loads(path.read_text(encoding="utf-8"))
         descriptor = McpClientDescriptor.model_validate(payload)
@@ -106,6 +115,7 @@ class DescriptorMcpLoader:
 
 
 def _safe_function_name(client_name: str, method_name: str) -> str:
+
     def _normalize(token: str) -> str:
         normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", token)
         normalized = normalized.strip("_")

@@ -79,12 +79,15 @@ def _read_text_file_impl(args: ReadTextFileArgs) -> ReadTextFileResult:
     content = target_path.read_text(encoding="utf-8", errors="replace")
     truncated = False
     if len(content) > args.max_chars:
-        content = content[: args.max_chars]
+        content = content[:args.max_chars]
         truncated = True
-    return ReadTextFileResult(path=str(target_path), content=content, truncated=truncated)
+    return ReadTextFileResult(path=str(target_path),
+                              content=content,
+                              truncated=truncated)
 
 
 class ExampleFunctionProvider(FunctionProvider):
+
     def provider_name(self) -> str:
         return "example-functions"
 
@@ -125,7 +128,8 @@ def register() -> PluginDescriptor:
     return PluginDescriptor(
         metadata=PluginFunctionMeta(
             name="example-functions",
-            description="Example function provider plugin with file and text helpers.",
+            description=
+            "Example function provider plugin with file and text helpers.",
         ),
         plugin_factory=ExampleFunctionProvider,
     )

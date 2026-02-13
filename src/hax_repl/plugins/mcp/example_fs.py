@@ -13,7 +13,9 @@ class ExampleFilesystemTools:
     def pwd(self) -> dict[str, str]:
         return {"cwd": str(Path.cwd())}
 
-    def list_dir(self, path: str = ".", max_entries: int = 50) -> dict[str, object]:
+    def list_dir(self,
+                 path: str = ".",
+                 max_entries: int = 50) -> dict[str, object]:
         target = Path(path).expanduser()
         entries: list[str] = []
         for child in sorted(target.iterdir(), key=lambda p: p.name):

@@ -23,12 +23,16 @@ class FunctionSpec(Generic[TArgs, TResult]):
 
 
 class FunctionProvider(Protocol):
-    def provider_name(self) -> str: ...
 
-    def functions(self) -> list[FunctionSpec[BaseModel, Any]]: ...
+    def provider_name(self) -> str:
+        ...
+
+    def functions(self) -> list[FunctionSpec[BaseModel, Any]]:
+        ...
 
 
 class FunctionRegistry:
+
     def __init__(self) -> None:
         self._functions: dict[str, FunctionSpec[BaseModel, Any]] = {}
 
@@ -41,7 +45,9 @@ class FunctionRegistry:
         self._functions[function_spec.name] = function_spec
 
     def all_specs(self) -> list[FunctionSpec[BaseModel, Any]]:
-        return [self._functions[name] for name in sorted(self._functions.keys())]
+        return [
+            self._functions[name] for name in sorted(self._functions.keys())
+        ]
 
     def names(self) -> list[str]:
         return sorted(self._functions.keys())
@@ -51,7 +57,10 @@ class FunctionRegistry:
             raise KeyError(f"Unknown function: {name}")
         return self._functions[name]
 
-    def enabled_specs(self, enabled_function_names: list[str] | None = None) -> list[FunctionSpec[BaseModel, Any]]:
+    def enabled_specs(
+        self,
+        enabled_function_names: list[str] | None = None
+    ) -> list[FunctionSpec[BaseModel, Any]]:
         if enabled_function_names is None or not enabled_function_names:
             return self.all_specs()
         specs: list[FunctionSpec[BaseModel, Any]] = []
@@ -59,13 +68,17 @@ class FunctionRegistry:
             specs.append(self.get(name))
         return specs
 
-    def schema_hash_for(self, function_spec: FunctionSpec[BaseModel, Any]) -> str:
+    def schema_hash_for(self, function_spec: FunctionSpec[BaseModel,
+                                                          Any]) -> str:
         payload = {
             "name": function_spec.name,
             "description": function_spec.description,
             "args_schema": function_spec.args_model.model_json_schema(),
         }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        encoded = json.dumps(payload,
+                             sort_keys=True,
+                             separators=(",", ":"),
+                             ensure_ascii=True)
         return hashlib.md5(encoded.encode("utf-8")).hexdigest()
 
     def invoke_json(self, function_name: str, arguments_json: str) -> str:
@@ -83,24 +96,24 @@ class FunctionRegistry:
         return json.dumps(result, ensure_ascii=True)
 
     def to_tool_specs(
-        self, enabled_function_names: list[str] | None = None
+        self,
+        enabled_function_names: list[str] | None = None
     ) -> list[dict[str, object]]:
         tools: list[dict[str, object]] = []
         for spec in self.enabled_specs(enabled_function_names):
-            tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": spec.name,
-                        "description": spec.description,
-                        "parameters": spec.args_model.model_json_schema(),
-                    },
-                }
-            )
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "parameters": spec.args_model.model_json_schema(),
+                },
+            })
         return tools
 
     def list_with_schema_hashes(
-        self, enabled_function_names: list[str] | None = None
+        self,
+        enabled_function_names: list[str] | None = None
     ) -> list[tuple[str, str]]:
         result: list[tuple[str, str]] = []
         for spec in self.enabled_specs(enabled_function_names):
@@ -122,6 +135,7 @@ def _python_eval_impl(args: PythonEvalArgs) -> PythonEvalResult:
 
 
 class BuiltinFunctionProvider:
+
     def provider_name(self) -> str:
         return "builtin"
 
@@ -129,7 +143,8 @@ class BuiltinFunctionProvider:
         return [
             FunctionSpec(
                 name="python_eval",
-                description="Evaluate a Python expression and return repr(result).",
+                description=
+                "Evaluate a Python expression and return repr(result).",
                 args_model=PythonEvalArgs,
                 result_model=PythonEvalResult,
                 impl=_python_eval_impl,

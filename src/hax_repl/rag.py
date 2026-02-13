@@ -23,14 +23,25 @@ class RagInvocationRecord(BaseModel):
 
 
 class RagProvider(Protocol):
-    def list_indices(self) -> Sequence[str]: ...
 
-    def query(self, index_name: str, query_text: str, options_json: str = "{}") -> RagResult: ...
+    def list_indices(self) -> Sequence[str]:
+        ...
 
-    def update_index(self, index_name: str, sources: Sequence[str], options_json: str = "{}") -> None: ...
+    def query(self,
+              index_name: str,
+              query_text: str,
+              options_json: str = "{}") -> RagResult:
+        ...
+
+    def update_index(self,
+                     index_name: str,
+                     sources: Sequence[str],
+                     options_json: str = "{}") -> None:
+        ...
 
 
 class RagRegistry:
+
     def __init__(self) -> None:
         self._providers: dict[str, RagProvider] = {}
 
@@ -58,7 +69,9 @@ class RagRegistry:
         options_json: str = "{}",
     ) -> RagResult:
         provider = self.get(provider_name)
-        return provider.query(index_name=index_name, query_text=query_text, options_json=options_json)
+        return provider.query(index_name=index_name,
+                              query_text=query_text,
+                              options_json=options_json)
 
     def update_index(
         self,
@@ -69,7 +82,9 @@ class RagRegistry:
         options_json: str = "{}",
     ) -> None:
         provider = self.get(provider_name)
-        provider.update_index(index_name=index_name, sources=sources, options_json=options_json)
+        provider.update_index(index_name=index_name,
+                              sources=sources,
+                              options_json=options_json)
 
 
 def options_get_int(options_json: str, key: str, default: int) -> int:

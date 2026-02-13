@@ -5,11 +5,17 @@ from typing import Protocol
 
 
 class AgentPlugin(Protocol):
-    def agent_name(self) -> str: ...
 
-    def build_step_prompt(self, *, goal: str, step_index: int, step_history: list[str]) -> str: ...
+    def agent_name(self) -> str:
+        ...
 
-    def should_stop(self, *, response_text: str, step_index: int, max_steps: int) -> bool: ...
+    def build_step_prompt(self, *, goal: str, step_index: int,
+                          step_history: list[str]) -> str:
+        ...
+
+    def should_stop(self, *, response_text: str, step_index: int,
+                    max_steps: int) -> bool:
+        ...
 
 
 @dataclass
@@ -25,22 +31,23 @@ class AgentRunState:
 
 
 class DefaultInteractiveAgent:
+
     def agent_name(self) -> str:
         return "default-agent"
 
-    def build_step_prompt(self, *, goal: str, step_index: int, step_history: list[str]) -> str:
+    def build_step_prompt(self, *, goal: str, step_index: int,
+                          step_history: list[str]) -> str:
         prior = "\n\n".join(step_history[-3:]) if step_history else "(none)"
-        return (
-            "You are running as a step-wise coding agent.\n"
-            f"Goal: {goal}\n"
-            f"Step: {step_index + 1}\n"
-            "Prior step outputs (latest up to 3):\n"
-            f"{prior}\n\n"
-            "Produce the next concise action/result. "
-            "If the goal is complete, include the marker <agent_done>."
-        )
+        return ("You are running as a step-wise coding agent.\n"
+                f"Goal: {goal}\n"
+                f"Step: {step_index + 1}\n"
+                "Prior step outputs (latest up to 3):\n"
+                f"{prior}\n\n"
+                "Produce the next concise action/result. "
+                "If the goal is complete, include the marker <agent_done>.")
 
-    def should_stop(self, *, response_text: str, step_index: int, max_steps: int) -> bool:
+    def should_stop(self, *, response_text: str, step_index: int,
+                    max_steps: int) -> bool:
         if "<agent_done>" in response_text:
             return True
         return step_index + 1 >= max_steps

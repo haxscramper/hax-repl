@@ -8,7 +8,6 @@ from typing import Callable, Sequence
 
 from hax_repl.rag import RagResult
 
-
 MACRO_PATTERN = re.compile(r"\$\((.*?)\)")
 
 
@@ -45,7 +44,8 @@ class MacroExpander:
             return body
 
         expanded = MACRO_PATTERN.sub(_replace, prompt)
-        return MacroExpansionResult(expanded_text=expanded, rag_records=rag_records)
+        return MacroExpansionResult(expanded_text=expanded,
+                                    rag_records=rag_records)
 
     def _expand_rag_macro(
         self,
@@ -73,7 +73,9 @@ class MacroExpander:
         return rag_query(provider_name, index_name, query_text)
 
     def _rag_result_to_text(self, result: RagResult) -> str:
-        lines: list[str] = [f"<rag provider=\"{result.provider}\" index=\"{result.index}\">"]
+        lines: list[str] = [
+            f"<rag provider=\"{result.provider}\" index=\"{result.index}\">"
+        ]
         for chunk in result.chunks:
             lines.append(
                 f"- [{chunk.source_id}] score={chunk.score:.4f} text={chunk.text[:240]}"

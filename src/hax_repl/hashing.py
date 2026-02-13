@@ -9,7 +9,10 @@ from hax_repl.models import ContentHashID, ContextHashID, EnabledFunction
 
 
 def _md5_for_json(payload: object) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    encoded = json.dumps(payload,
+                         sort_keys=True,
+                         separators=(",", ":"),
+                         ensure_ascii=True)
     return hashlib.md5(encoded.encode("utf-8")).hexdigest()
 
 
@@ -20,20 +23,20 @@ def content_hash_for_prompt(
     enabled_functions: Sequence[EnabledFunction],
     included_context_ids: Sequence[str],
 ) -> ContentHashID:
-    return ContentHashID(
-        md5=_md5_for_json(
-            {
-                "kind": "prompt",
-                "original_prompt": original_prompt,
-                "augmented_prompt": augmented_prompt,
-                "enabled_functions": [
-                    {"name": function.name, "schema_hash": function.schema_hash}
-                    for function in enabled_functions
-                ],
-                "included_context_ids": list(included_context_ids),
-            }
-        )
-    )
+    return ContentHashID(md5=_md5_for_json({
+        "kind":
+        "prompt",
+        "original_prompt":
+        original_prompt,
+        "augmented_prompt":
+        augmented_prompt,
+        "enabled_functions": [{
+            "name": function.name,
+            "schema_hash": function.schema_hash
+        } for function in enabled_functions],
+        "included_context_ids":
+        list(included_context_ids),
+    }))
 
 
 def content_hash_for_response(
@@ -44,16 +47,13 @@ def content_hash_for_response(
     thinking_text: str,
 ) -> ContentHashID:
     return ContentHashID(
-        md5=_md5_for_json(
-            {
-                "kind": "response",
-                "text": text,
-                "function_calls_json": list(function_calls_json),
-                "function_results_json": list(function_results_json),
-                "thinking_text": thinking_text,
-            }
-        )
-    )
+        md5=_md5_for_json({
+            "kind": "response",
+            "text": text,
+            "function_calls_json": list(function_calls_json),
+            "function_results_json": list(function_results_json),
+            "thinking_text": thinking_text,
+        }))
 
 
 def context_hash(
@@ -63,16 +63,13 @@ def context_hash(
     function_schema_hashes: Sequence[str],
     rag_provenance: Sequence[str],
 ) -> ContextHashID:
-    return ContextHashID(
-        md5=_md5_for_json(
-            {
-                "content_hash": content_hash.md5,
-                "model_name": model_name,
-                "function_schema_hashes": list(function_schema_hashes),
-                "rag_provenance": list(rag_provenance),
-            }
-        )
-    )
+    return ContextHashID(md5=_md5_for_json(
+        {
+            "content_hash": content_hash.md5,
+            "model_name": model_name,
+            "function_schema_hashes": list(function_schema_hashes),
+            "rag_provenance": list(rag_provenance),
+        }))
 
 
 @dataclass(frozen=True)

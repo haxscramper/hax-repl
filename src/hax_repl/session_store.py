@@ -5,10 +5,12 @@ from pathlib import Path
 
 import yaml
 
-from hax_repl.models import ContextHashID, SessionFile, SessionName, SessionTurn
+from hax_repl.models import (ContextHashID, SessionFile, SessionName,
+                             SessionTurn)
 
 
 class SessionStore:
+
     def __init__(self, root_dir: Path) -> None:
         self._root_dir = root_dir
         self._root_dir.mkdir(parents=True, exist_ok=True)
@@ -44,7 +46,8 @@ class SessionStore:
             encoding="utf-8",
         )
 
-    def append_prompt(self, session: SessionFile, prompt_context_id: ContextHashID) -> SessionFile:
+    def append_prompt(self, session: SessionFile,
+                      prompt_context_id: ContextHashID) -> SessionFile:
         next_turn = SessionTurn(
             index=len(session.turns) + 1,
             prompt_id=prompt_context_id,
@@ -54,36 +57,46 @@ class SessionStore:
             update={
                 "turns": [*session.turns, next_turn],
                 "message_ids": [*session.message_ids, prompt_context_id],
-            }
-        )
+            })
         self.save(updated)
         return updated
 
     def attach_response_to_last_turn(
-        self, session: SessionFile, response_context_id: ContextHashID
-    ) -> SessionFile:
+            self, session: SessionFile,
+            response_context_id: ContextHashID) -> SessionFile:
         if not session.turns:
             raise RuntimeError("Cannot attach response: session has no turns.")
         turns = list(session.turns)
-        turns[-1] = turns[-1].model_copy(update={"response_id": response_context_id})
+        turns[-1] = turns[-1].model_copy(
+            update={"response_id": response_context_id})
         updated = session.model_copy(
             update={
                 "turns": turns,
                 "message_ids": [*session.message_ids, response_context_id],
-            }
-        )
+            })
         self.save(updated)
         return updated
 
-    def remove_last_turn(self, session: SessionFile) -> tuple[SessionFile, SessionTurn | None]:
+    def remove_last_turn(
+            self,
+            session: SessionFile) -> tuple[SessionFile, SessionTurn | None]:
         if not session.turns:
             return session, None
         turns = list(session.turns)
         removed_turn = turns.pop()
-        message_ids = [cid for cid in session.message_ids if cid.md5 != removed_turn.prompt_id.md5]
+        message_ids = [
+            cid for cid in session.message_ids
+            if cid.md5 != removed_turn.prompt_id.md5
+        ]
         if removed_turn.response_id is not None:
-            message_ids = [cid for cid in message_ids if cid.md5 != removed_turn.response_id.md5]
-        updated = session.model_copy(update={"turns": turns, "message_ids": message_ids})
+            message_ids = [
+                cid for cid in message_ids
+                if cid.md5 != removed_turn.response_id.md5
+            ]
+        updated = session.model_copy(update={
+            "turns": turns,
+            "message_ids": message_ids
+        })
         self.save(updated)
         return updated, removed_turn
 
