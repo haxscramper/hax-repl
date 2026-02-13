@@ -573,6 +573,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
+    { name = "click" },
     { name = "httpx" },
     { name = "openai" },
     { name = "prompt-toolkit" },
@@ -585,6 +586,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "chromadb", specifier = ">=1.0.20" },
+    { name = "click", specifier = ">=8.3.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "openai", specifier = ">=1.100.2" },
     { name = "prompt-toolkit", specifier = ">=3.0.51" },
