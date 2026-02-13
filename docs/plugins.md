@@ -19,8 +19,8 @@ RAG providers are also wired into runtime and macro expansion.
 
 Configured in `pyproject.toml`:
 
-- `example_functions = "hax_repl.plugins.functions.examples:ExampleFunctionProvider"`
-- `json_functions = "hax_repl.plugins.functions.examples:JsonFunctionProvider"`
+- `example_functions = "hax_repl.plugins.functions.example_functions:ExampleFunctionProvider"`
+- `json_functions = "hax_repl.plugins.functions.json_functions:JsonFunctionProvider"`
 
 Built-in functions are also registered by runtime.
 
@@ -37,8 +37,8 @@ Built-in functions are also registered by runtime.
 
 Configured in `pyproject.toml`:
 
-- `example_fs = "hax_repl.plugins.mcp.examples:example_fs_mcp_client"`
-- `example_time = "hax_repl.plugins.mcp.examples:example_time_mcp_client"`
+- `example_fs = "hax_repl.plugins.mcp.example_fs:example_fs_mcp_client"`
+- `example_time = "hax_repl.plugins.mcp.example_time:example_time_mcp_client"`
 
 The MCP tools are registered into the same function-calling registry and exposed to the model as tools.
 
@@ -57,7 +57,7 @@ Descriptor schema:
 ```json
 {
   "name": "descriptor-time",
-  "module": "hax_repl.plugins.mcp.examples",
+  "module": "hax_repl.plugins.mcp.example_time",
   "class": "ExampleTimeTools"
 }
 ```
@@ -66,8 +66,8 @@ Descriptor schema:
 
 Configured in `pyproject.toml`:
 
-- `code_exec = "hax_repl.plugins.agents.examples:CodeExecAgentPlugin"`
-- `research = "hax_repl.plugins.agents.examples:ResearchAgentPlugin"`
+- `code_exec = "hax_repl.plugins.agents.code_exec:CodeExecAgentPlugin"`
+- `research = "hax_repl.plugins.agents.research:ResearchAgentPlugin"`
 
 ### Agent REPL commands
 
@@ -86,8 +86,13 @@ Agent execution is step-wise and uses the same model/tool loop with interactive 
 
 Configured in `pyproject.toml`:
 
-- `chroma = "hax_repl.plugins.rag.examples:ChromaVectorRagProvider"`
-- `tantivy = "hax_repl.plugins.rag.examples:TantivyFullTextRagProvider"`
+- `chroma = "hax_repl.plugins.rag.chroma_provider:ChromaVectorRagProvider"`
+- `tantivy = "hax_repl.plugins.rag.tantivy_provider:TantivyFullTextRagProvider"`
+
+The Chroma provider uses OpenRouter embeddings with model `openai/text-embedding-3-small`:
+
+- `HAXSCRAMPER_LLM_REPL_KEY` is required
+- optional: `HAX_REPL_EMBEDDING_MODEL` (defaults to `openai/text-embedding-3-small`; `text-embedding-3-small` alias is accepted)
 
 ### RAG REPL commands
 

@@ -61,6 +61,8 @@ In REPL:
 
 ### RAG quick start
 
+- For Chroma vector embeddings, set:
+  - `export HAXSCRAMPER_LLM_REPL_KEY=...`
 - List providers:
   - `.rag providers`
 - Update vector index (Chroma):

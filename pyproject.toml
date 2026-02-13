@@ -7,12 +7,11 @@ requires-python = ">=3.13"
 dependencies = [
     "chromadb>=1.0.20",
     "httpx>=0.28.1",
-    "numpy>=2.3.2",
+    "openai>=1.100.2",
     "prompt-toolkit>=3.0.51",
     "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
-    "sentence-transformers>=5.1.0",
     "tantivy>=0.24.0",
 ]
 
@@ -20,20 +19,20 @@ dependencies = [
 hax-repl = "hax_repl.cli:main"
 
 [project.entry-points."hax_repl.function_providers"]
-example_functions = "hax_repl.plugins.functions.examples:ExampleFunctionProvider"
-json_functions = "hax_repl.plugins.functions.examples:JsonFunctionProvider"
+example_functions = "hax_repl.plugins.functions.example_functions:ExampleFunctionProvider"
+json_functions = "hax_repl.plugins.functions.json_functions:JsonFunctionProvider"
 
 [project.entry-points."hax_repl.mcp_clients"]
-example_fs = "hax_repl.plugins.mcp.examples:example_fs_mcp_client"
-example_time = "hax_repl.plugins.mcp.examples:example_time_mcp_client"
+example_fs = "hax_repl.plugins.mcp.example_fs:example_fs_mcp_client"
+example_time = "hax_repl.plugins.mcp.example_time:example_time_mcp_client"
 
 [project.entry-points."hax_repl.rag_providers"]
-chroma = "hax_repl.plugins.rag.examples:ChromaVectorRagProvider"
-tantivy = "hax_repl.plugins.rag.examples:TantivyFullTextRagProvider"
+chroma = "hax_repl.plugins.rag.chroma_provider:ChromaVectorRagProvider"
+tantivy = "hax_repl.plugins.rag.tantivy_provider:TantivyFullTextRagProvider"
 
 [project.entry-points."hax_repl.agents"]
-code_exec = "hax_repl.plugins.agents.examples:CodeExecAgentPlugin"
-research = "hax_repl.plugins.agents.examples:ResearchAgentPlugin"
+code_exec = "hax_repl.plugins.agents.code_exec:CodeExecAgentPlugin"
+research = "hax_repl.plugins.agents.research:ResearchAgentPlugin"
 
 [build-system]
 requires = ["hatchling"]

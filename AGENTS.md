@@ -87,8 +87,9 @@ Legend:
 - Implemented:
   - RAG registry with provider listing/query/update routes in `src/hax_repl/rag.py`
   - runtime loading of `hax_repl.rag_providers` plugins
-  - example vector RAG provider: `src/hax_repl/plugins/rag/examples.py` (`chroma`)
-  - example full-text RAG provider: `src/hax_repl/plugins/rag/examples.py` (`tantivy`)
+  - example vector RAG provider: `src/hax_repl/plugins/rag/chroma_provider.py` (`chroma`)
+  - example full-text RAG provider: `src/hax_repl/plugins/rag/tantivy_provider.py` (`tantivy`)
+  - Chroma provider uses OpenRouter embeddings (`openai/text-embedding-3-small`) instead of local embedding computation
   - macro expansion with:
     - `$(get-os)`
     - `$(rag:provider/index "query text")`
@@ -116,8 +117,8 @@ Legend:
     - provide manual tool result payload (fed back to model)
   - same confirmation flow is used for normal prompts and `.conversation generate-again`
 - Example plugins:
-  - MCP: `src/hax_repl/plugins/mcp/examples.py`
-  - Agents: `src/hax_repl/plugins/agents/examples.py`
+  - MCP: one-file-per-example (`src/hax_repl/plugins/mcp/example_fs.py`, `src/hax_repl/plugins/mcp/example_time.py`)
+  - Agents: one-file-per-example (`src/hax_repl/plugins/agents/code_exec.py`, `src/hax_repl/plugins/agents/research.py`)
 - Descriptor example:
   - `examples/mcp_time_descriptor.json`
 
@@ -236,6 +237,8 @@ Function-calling APIs currently available:
 
 - API key env var: `HAXSCRAMPER_LLM_REPL_KEY`
 - Default model: `anthropic/claude-sonnet-4.5`
+- OpenRouter API key env var for Chroma RAG embeddings: `HAXSCRAMPER_LLM_REPL_KEY`
+- Optional embedding model override: `HAX_REPL_EMBEDDING_MODEL` (default `openai/text-embedding-3-small`)
 
 ## Extension Points (Scaffolded)
 
