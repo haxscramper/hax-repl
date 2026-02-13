@@ -1,5 +1,5 @@
 [project]
-name = "llm-repl2"
+name = "hax-repl"
 version = "0.1.0"
 description = "POC LLM REPL with session persistence"
 readme = "README.md"
