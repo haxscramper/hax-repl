@@ -66,7 +66,7 @@ class OpenRouterClient:
             json=request_payload,
             timeout=120.0,
         ) as response:
-            response.raise_for_status()
+            _raise_for_status_with_details(response)
             for raw_line in response.iter_lines():
                 if not raw_line:
                     continue
@@ -108,7 +108,7 @@ class OpenRouterClient:
             json=request_payload,
             timeout=120.0,
         )
-        response.raise_for_status()
+        _raise_for_status_with_details(response)
         payload = response.json()
         choices = payload.get("choices", [])
         if not choices:
@@ -200,3 +200,15 @@ def _extract_tool_calls(message: object) -> list[ToolCall]:
             continue
         calls.append(ToolCall(id=call_id, name=name, arguments_json=arguments))
     return calls
+
+
+def _raise_for_status_with_details(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        snippet = response.text[:2000]
+        detail = snippet.strip() or "<empty response body>"
+        raise RuntimeError(
+            f"OpenRouter request failed with status={response.status_code}. "
+            f"Response body: {detail}"
+        ) from exc

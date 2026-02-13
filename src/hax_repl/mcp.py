@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -46,6 +47,7 @@ class LocalClassMcpClientAdapter:
             for method_name, method in inspect.getmembers(obj, predicate=callable)
             if not method_name.startswith("_")
         }
+        self._function_name_to_method_name: dict[str, str] = {}
 
     def client_name(self) -> str:
         return self._name
@@ -55,13 +57,15 @@ class LocalClassMcpClientAdapter:
         for method_name in sorted(self._methods.keys()):
             method = self._methods[method_name]
             doc = inspect.getdoc(method) or f"MCP tool {method_name}"
+            function_name = _safe_function_name(self._name, method_name)
+            self._function_name_to_method_name[function_name] = method_name
             args_model = create_model(
                 f"McpArgs_{self._name}_{method_name}",
                 arguments_json=(str, Field(default="{}")),
             )
             tools.append(
                 FunctionSpec(
-                    name=f"mcp.{self._name}.{method_name}",
+                    name=function_name,
                     description=doc,
                     args_model=args_model,
                     result_model=None,
@@ -99,3 +103,16 @@ class DescriptorMcpLoader:
         cls = getattr(module, descriptor.class_name)
         instance = cls()
         return LocalClassMcpClientAdapter(descriptor.name, instance)
+
+
+def _safe_function_name(client_name: str, method_name: str) -> str:
+    def _normalize(token: str) -> str:
+        normalized = re.sub(r"[^A-Za-z0-9_-]+", "_", token)
+        normalized = normalized.strip("_")
+        return normalized or "x"
+
+    prefix = "mcp"
+    composed = f"{prefix}_{_normalize(client_name)}_{_normalize(method_name)}"
+    if len(composed) <= 64:
+        return composed
+    return composed[:64].rstrip("_")

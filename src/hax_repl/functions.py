@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, Protocol, TypeVar
 
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 
 TArgs = TypeVar("TArgs", bound=BaseModel)
 TResult = TypeVar("TResult")
+FUNCTION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,11 @@ class FunctionRegistry:
         self._functions: dict[str, FunctionSpec[BaseModel, Any]] = {}
 
     def register(self, function_spec: FunctionSpec[BaseModel, Any]) -> None:
+        if not FUNCTION_NAME_PATTERN.match(function_spec.name):
+            raise ValueError(
+                "Invalid function name "
+                f"'{function_spec.name}'. Must match {FUNCTION_NAME_PATTERN.pattern}"
+            )
         self._functions[function_spec.name] = function_spec
 
     def all_specs(self) -> list[FunctionSpec[BaseModel, Any]]:
