@@ -8,10 +8,10 @@ The project defines these entry point groups:
 
 - `hax_repl.function_providers`
 - `hax_repl.rag_providers` (scaffolded)
-- `hax_repl.mcp_clients` (scaffolded)
-- `hax_repl.agents` (scaffolded)
+- `hax_repl.mcp_clients`
+- `hax_repl.agents`
 
-At this stage, function providers are fully wired into runtime tool calling.
+At this stage, function providers are fully wired into runtime tool calling, and MCP/agent plugins are integrated into the runtime loop.
 
 ## Included example function providers
 
@@ -30,6 +30,55 @@ Built-in functions are also registered by runtime.
 - `read_text_file`
 - `pretty_json`
 - `python_eval` (built-in, intentionally simple/insecure for POC)
+
+## Included example MCP plugins
+
+Configured in `pyproject.toml`:
+
+- `example_fs = "hax_repl.plugins.mcp.examples:example_fs_mcp_client"`
+- `example_time = "hax_repl.plugins.mcp.examples:example_time_mcp_client"`
+
+The MCP tools are registered into the same function-calling registry and exposed to the model as tools.
+
+### MCP REPL commands
+
+- `.mcp list` - list loaded MCP clients and their function names
+- `.mcp load <descriptor.json>` - load a local-class MCP client from JSON descriptor
+- `.mcp call <client-name> <tool-name> <json-args>` - invoke MCP tool directly
+
+Example descriptor file is included:
+
+- `examples/mcp_time_descriptor.json`
+
+Descriptor schema:
+
+```json
+{
+  "name": "descriptor-time",
+  "module": "hax_repl.plugins.mcp.examples",
+  "class": "ExampleTimeTools"
+}
+```
+
+## Included example agent plugins
+
+Configured in `pyproject.toml`:
+
+- `code_exec = "hax_repl.plugins.agents.examples:CodeExecAgentPlugin"`
+- `research = "hax_repl.plugins.agents.examples:ResearchAgentPlugin"`
+
+### Agent REPL commands
+
+- `.agent list`
+- `.agent start <agent-name> <goal>`
+- `.agent status`
+- `.agent pause`
+- `.agent resume`
+- `.agent step`
+- `.agent run [steps]`
+- `.agent stop`
+
+Agent execution is step-wise and uses the same model/tool loop with interactive per-tool approval.
 
 ## How to use functions in the REPL
 
@@ -68,6 +117,10 @@ Prompt examples:
 5. Tool results are appended back to model context as `tool` messages.
 6. Loop continues until final assistant text response arrives.
 7. Function call requests/results are persisted in `ResponseMessage`.
+8. During REPL-driven runs, each tool call is presented for user decision:
+   - approve
+   - reject with reason
+   - manual result payload
 
 ## Writing your own function provider
 
@@ -95,6 +148,26 @@ Then run:
 
 - `uv sync`
 - `uv run hax-repl --session test-tools`
+
+## Writing your own MCP plugin
+
+Return an object that exposes:
+
+- `client_name() -> str`
+- `list_tools() -> list[FunctionSpec]`
+- `invoke(tool_name: str, arguments_json: str) -> str`
+
+Or use `LocalClassMcpClientAdapter` with a regular Python class.
+
+## Writing your own agent plugin
+
+Implement:
+
+- `agent_name() -> str`
+- `build_step_prompt(goal, step_index, step_history) -> str`
+- `should_stop(response_text, step_index, max_steps) -> bool`
+
+Register under `[project.entry-points."hax_repl.agents"]`.
 
 ## Notes
 

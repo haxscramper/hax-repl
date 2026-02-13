@@ -5,8 +5,9 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Callable, Sequence
+from typing import Callable, Literal, Sequence
 
+from hax_repl.agents import AgentPlugin, AgentRunState, DefaultInteractiveAgent
 from hax_repl.hashing import (
     content_hash_for_prompt,
     content_hash_for_response,
@@ -16,6 +17,7 @@ from hax_repl.hashing import (
 from hax_repl.functions import BuiltinFunctionProvider, FunctionProvider, FunctionRegistry
 from hax_repl.llm_client import ChatCompletionResult, ChatMessage, OpenRouterClient, ToolCall
 from hax_repl.macro import MacroExpander
+from hax_repl.mcp import DescriptorMcpLoader, LocalClassMcpClientAdapter, McpClient, RegisteredMcpClient
 from hax_repl.message_store import MessageStore
 from hax_repl.models import (
     AnyMessage,
@@ -53,6 +55,13 @@ class RuntimeResponse:
     stats: QueryStats
 
 
+@dataclass(frozen=True)
+class FunctionCallDecision:
+    action: Literal["approve", "reject", "manual"] = "approve"
+    manual_result_json: str | None = None
+    rejection_reason: str = ""
+
+
 class AppRuntime:
     def __init__(self, session_name: str | None, model_name: str = "anthropic/claude-sonnet-4.5") -> None:
         app_dir = Path.home() / ".local" / "share" / "haxllm"
@@ -65,6 +74,11 @@ class AppRuntime:
         self._client = OpenRouterClient(model_name=model_name)
         self._macro_expander = MacroExpander()
         self._function_registry = self._build_function_registry()
+        self._mcp_loader = DescriptorMcpLoader()
+        self._mcp_clients: dict[str, RegisteredMcpClient] = {}
+        self._register_mcp_plugins()
+        self._agent_plugins = self._build_agent_registry()
+        self._active_agent_run: AgentRunState | None = None
 
         resolved_name: SessionName = self._session_store.resolve_session_name(session_name)
         self._session: SessionFile = self._session_store.load_or_create(resolved_name)
@@ -87,13 +101,50 @@ class AppRuntime:
                 registry.register(function_spec)
         return registry
 
+    def _build_agent_registry(self) -> dict[str, AgentPlugin]:
+        agents: dict[str, AgentPlugin] = {}
+        default_agent = DefaultInteractiveAgent()
+        agents[default_agent.agent_name()] = default_agent
+        for loaded in load_plugins_or_fail("hax_repl.agents"):
+            candidate = instantiate_plugin(loaded.plugin)
+            plugin_obj = candidate() if callable(candidate) and not hasattr(candidate, "agent_name") else candidate
+            if not hasattr(plugin_obj, "agent_name") or not hasattr(plugin_obj, "build_step_prompt"):
+                raise RuntimeError(f"Invalid agent plugin: {loaded.name}")
+            name = plugin_obj.agent_name()
+            agents[name] = plugin_obj
+        return agents
+
+    def _register_mcp_plugins(self) -> None:
+        for loaded in load_plugins_or_fail("hax_repl.mcp_clients"):
+            candidate = instantiate_plugin(loaded.plugin)
+            client_obj = candidate() if callable(candidate) and not hasattr(candidate, "list_tools") else candidate
+            if hasattr(client_obj, "list_tools") and hasattr(client_obj, "invoke") and hasattr(
+                client_obj, "client_name"
+            ):
+                self._register_mcp_client(client_obj)
+                continue
+            if isinstance(client_obj, LocalClassMcpClientAdapter):
+                self._register_mcp_client(client_obj)
+                continue
+            raise RuntimeError(f"Invalid MCP plugin: {loaded.name}")
+
+    def _register_mcp_client(self, client: McpClient) -> RegisteredMcpClient:
+        function_names: list[str] = []
+        for tool_spec in client.list_tools():
+            self._function_registry.register(tool_spec)
+            function_names.append(tool_spec.name)
+        registered = RegisteredMcpClient(name=client.client_name(), client=client, function_names=function_names)
+        self._mcp_clients[registered.name] = registered
+        return registered
+
     @property
     def session(self) -> SessionFile:
         return self._session
 
     @property
     def prompt_state_label(self) -> str:
-        return f"{self._session.session.value}/{self._default_agent}|{self._default_role.value})"
+        active_agent = self._active_agent_run.agent_name if self._active_agent_run is not None else self._default_agent
+        return f"{self._session.session.value}/{active_agent}|{self._default_role.value})"
 
     @property
     def model_name(self) -> str:
@@ -154,11 +205,83 @@ class AppRuntime:
     def invoke_function(self, function_name: str, arguments_json: str) -> str:
         return self._function_registry.invoke_json(function_name, arguments_json)
 
+    def list_mcp_clients(self) -> list[RegisteredMcpClient]:
+        return [self._mcp_clients[name] for name in sorted(self._mcp_clients.keys())]
+
+    def load_mcp_descriptor(self, descriptor_path: str) -> RegisteredMcpClient:
+        adapter = self._mcp_loader.load(Path(descriptor_path).expanduser())
+        return self._register_mcp_client(adapter)
+
+    def invoke_mcp_tool(self, client_name: str, tool_name: str, arguments_json: str) -> str:
+        if client_name not in self._mcp_clients:
+            raise KeyError(f"Unknown MCP client: {client_name}")
+        return self._mcp_clients[client_name].client.invoke(tool_name, arguments_json)
+
+    def list_agents(self) -> list[str]:
+        return sorted(self._agent_plugins.keys())
+
+    def start_agent_run(self, *, agent_name: str, goal: str, max_steps: int = 8) -> AgentRunState:
+        if agent_name not in self._agent_plugins:
+            raise KeyError(f"Unknown agent: {agent_name}")
+        state = AgentRunState(agent_name=agent_name, goal=goal, max_steps=max_steps)
+        self._active_agent_run = state
+        return state
+
+    def agent_status(self) -> AgentRunState | None:
+        return self._active_agent_run
+
+    def pause_agent(self) -> bool:
+        if self._active_agent_run is None:
+            return False
+        self._active_agent_run.paused = True
+        return True
+
+    def resume_agent(self) -> bool:
+        if self._active_agent_run is None:
+            return False
+        self._active_agent_run.paused = False
+        return True
+
+    def clear_agent_run(self) -> None:
+        self._active_agent_run = None
+
+    def run_agent_step(
+        self,
+        *,
+        on_visible_token: Callable[[str], None] | None = None,
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] | None = None,
+    ) -> RuntimeResponse | None:
+        state = self._active_agent_run
+        if state is None or state.done or state.paused:
+            return None
+        plugin = self._agent_plugins[state.agent_name]
+        prompt = plugin.build_step_prompt(
+            goal=state.goal,
+            step_index=state.step_index,
+            step_history=state.step_history,
+        )
+        response = self.send_prompt(
+            prompt,
+            enabled_functions=None,
+            on_visible_token=on_visible_token,
+            on_function_call_decision=on_function_call_decision,
+        )
+        state.step_history.append(response.response_message.text)
+        state.last_response = response.response_message.text
+        state.done = plugin.should_stop(
+            response_text=response.response_message.text,
+            step_index=state.step_index,
+            max_steps=state.max_steps,
+        )
+        state.step_index += 1
+        return response
+
     def _run_function_calling_loop(
         self,
         *,
         llm_messages: list[ChatMessage],
         enabled_function_names: list[str],
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] | None = None,
     ) -> tuple[ChatCompletionResult, list[FunctionCallRequest], list[FunctionCallResult]]:
         messages = list(llm_messages)
         tool_specs = self._function_registry.to_tool_specs(enabled_function_names)
@@ -183,7 +306,12 @@ class AppRuntime:
             for tool_call in completion.tool_calls:
                 request = FunctionCallRequest(name=tool_call.name, arguments_json=tool_call.arguments_json)
                 all_requests.append(request)
-                result_json = self._invoke_tool_with_failure_payload(tool_call)
+                decision = (
+                    on_function_call_decision(request)
+                    if on_function_call_decision is not None
+                    else FunctionCallDecision(action="approve")
+                )
+                result_json = self._resolve_tool_call_result(tool_call=tool_call, decision=decision)
                 all_results.append(FunctionCallResult(name=tool_call.name, result_json=result_json))
                 messages.append(
                     ChatMessage(
@@ -195,6 +323,31 @@ class AppRuntime:
                 )
 
         return last_result, all_requests, all_results
+
+    def _resolve_tool_call_result(self, *, tool_call: ToolCall, decision: FunctionCallDecision) -> str:
+        if decision.action == "manual":
+            return self._normalize_manual_result(decision.manual_result_json)
+        if decision.action == "reject":
+            return json.dumps(
+                {
+                    "ok": False,
+                    "rejected": True,
+                    "tool_name": tool_call.name,
+                    "reason": decision.rejection_reason.strip() or "Rejected by user.",
+                },
+                ensure_ascii=True,
+            )
+        return self._invoke_tool_with_failure_payload(tool_call)
+
+    def _normalize_manual_result(self, manual_result_json: str | None) -> str:
+        text = (manual_result_json or "").strip()
+        if not text:
+            return json.dumps({"ok": True, "manual": True, "result": None}, ensure_ascii=True)
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = {"ok": True, "manual": True, "result": text}
+        return json.dumps(payload, ensure_ascii=True)
 
     def _invoke_tool_with_failure_payload(self, tool_call: ToolCall) -> str:
         try:
@@ -215,6 +368,7 @@ class AppRuntime:
         original_prompt: str,
         enabled_functions: Sequence[str] | None = None,
         on_visible_token: Callable[[str], None] | None = None,
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] | None = None,
     ) -> RuntimeResponse:
         enabled_function_refs = self._enabled_function_refs(enabled_functions)
         included_context_ids = [cid.md5 for cid in self._session.message_ids]
@@ -260,6 +414,7 @@ class AppRuntime:
             completion_result, function_call_requests, function_call_results = self._run_function_calling_loop(
                 llm_messages=llm_messages,
                 enabled_function_names=enabled_function_names,
+                on_function_call_decision=on_function_call_decision,
             )
             first_token_at = monotonic()
             first_visible_token_at = first_token_at
@@ -405,7 +560,9 @@ class AppRuntime:
         return True
 
     def generate_again(
-        self, on_visible_token: Callable[[str], None] | None = None
+        self,
+        on_visible_token: Callable[[str], None] | None = None,
+        on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] | None = None,
     ) -> RuntimeResponse | None:
         last_prompt = self.last_prompt_message()
         if last_prompt is None:
@@ -421,4 +578,5 @@ class AppRuntime:
             last_prompt.original_prompt,
             enabled_functions=[function.name for function in last_prompt.enabled_functions],
             on_visible_token=on_visible_token,
+            on_function_call_decision=on_function_call_decision,
         )

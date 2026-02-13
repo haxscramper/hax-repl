@@ -1,0 +1,5 @@
+{
+  "name": "descriptor-time",
+  "module": "hax_repl.plugins.mcp.examples",
+  "class": "ExampleTimeTools"
+}

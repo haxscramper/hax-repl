@@ -12,6 +12,10 @@ This file describes the current architecture and conventions for contributors an
   - command layer with conversation/history/show/copy/file/macro commands
 - Phase 4 is partially implemented:
   - plugin-loaded function registry and tool-calling runtime loop
+- Phase 6 is substantially implemented:
+  - MCP plugin loading and descriptor-driven MCP client loading
+  - agent plugin loading and step-wise pause/resume execution loop
+  - human-in-the-loop confirmation for model-requested function calls
 - Advanced features (plugin-wired function calling, concrete RAG providers, MCP integration, agent loop control) are scaffolded but not complete yet.
 
 ## Implementation Phases and Status
@@ -87,13 +91,30 @@ Legend:
   - deterministic RAG macro handling (for example `$(rag:...)`)
   - index management/update command flows
 
-### Phase 6 - MCP and Agent Pause/Resume (`PLANNED`)
+### Phase 6 - MCP and Agent Pause/Resume (`DONE` for POC scope)
 
-- Planned:
-  - MCP client descriptor loading from JSON
-  - local class-to-MCP adapter and tool mapping
-  - runtime MCP registration and invocation path
-  - pause/resume human-in-the-loop agent control
+- Implemented:
+  - MCP runtime integration:
+    - `src/hax_repl/mcp.py` with descriptor model/loader
+    - local-class MCP adapter turning class methods into callable tools
+    - runtime registration for `hax_repl.mcp_clients` plugins
+    - runtime command to load descriptor JSON at runtime (`.mcp load ...`)
+  - agent runtime integration:
+    - `src/hax_repl/agents.py` with agent plugin protocol and run state
+    - step-wise execution loop with persisted chat turns
+    - pause/resume/status/stop controls
+    - support for repeated stepping (`.agent run [steps]`)
+  - interactive function-call confirmation in REPL while model tool loop is running
+  - per-call decision options:
+    - approve and execute
+    - reject with reason (fed back to model as structured tool result)
+    - provide manual tool result payload (fed back to model)
+  - same confirmation flow is used for normal prompts and `.conversation generate-again`
+- Example plugins:
+  - MCP: `src/hax_repl/plugins/mcp/examples.py`
+  - Agents: `src/hax_repl/plugins/agents/examples.py`
+- Descriptor example:
+  - `examples/mcp_time_descriptor.json`
 
 ### Phase 7 - Testing and Hardening (`PARTIAL`)
 
@@ -118,10 +139,13 @@ High-level flow per query:
 1. Read prompt from multiline `prompt_toolkit` input
 2. Build and persist `PromptMessage` with content/context hashes
 3. Build remote query payload from stored conversation + current prompt
-4. Stream assistant output from OpenRouter
+4. Run model interaction loop:
+   - either stream plain text response, or
+   - execute iterative tool-calling loop with user confirmation on each call
 5. Split `<think>...</think>` from visible text
-6. Persist `ResponseMessage` and attach it to current turn
+6. Persist `ResponseMessage` (including function calls/results) and attach it to current turn
 7. Print response + timing/size stats in REPL
+8. Agent commands can trigger step-wise autonomous loop that uses the same model/tool interaction path
 
 Runtime command helper APIs currently available:
 
@@ -137,6 +161,9 @@ Function-calling APIs currently available:
 - Runtime-internal tool loop in `send_prompt()` using OpenRouter `tools`
 - `FunctionRegistry.to_tool_specs()` for OpenAI-compatible tool schemas
 - `FunctionRegistry.invoke_json()` for typed invocation from JSON arguments
+- `FunctionCallDecision` callbacks for interactive approve/reject/manual tool results
+- `list_mcp_clients()`, `load_mcp_descriptor()`
+- `list_agents()`, `start_agent_run()`, `agent_status()`, `pause_agent()`, `resume_agent()`, `run_agent_step()`
 
 ## Data Model and Storage
 
@@ -168,6 +195,19 @@ Function-calling APIs currently available:
   - `.copy last-response`
   - `.file <path>`
   - `.macro <text>`
+  - `.functions`
+  - `.functions call <name> <json-args>`
+  - `.mcp list`
+  - `.mcp load <descriptor.json>`
+  - `.mcp call <client-name> <tool-name> <json-args>`
+  - `.agent list`
+  - `.agent start <agent-name> <goal>`
+  - `.agent status`
+  - `.agent pause`
+  - `.agent resume`
+  - `.agent step`
+  - `.agent run [steps]`
+  - `.agent stop`
 - Submit shortcuts:
   - `Ctrl+J`
   - `Esc+Enter`
@@ -200,10 +240,14 @@ Function-calling APIs currently available:
   - `src/hax_repl/macro.py`
 - Function provider entry point group:
   - `hax_repl.function_providers`
+- MCP client entry point group:
+  - `hax_repl.mcp_clients`
+- Agent entry point group:
+  - `hax_repl.agents`
 
 ## Known Gaps
 
 - No dedicated RAG provider implementation yet
 - Function calling exists but lacks provider/agent-level configuration UX
-- No MCP client wiring into runtime yet
-- No pause/resume control for autonomous agent execution yet
+- No production-grade external MCP transport client yet (current implementation focuses on local/adapted MCP clients)
+- Agent loop is currently single-active-run and REPL-driven (no background scheduler)

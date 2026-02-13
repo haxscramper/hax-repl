@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shlex
 import shutil
@@ -14,7 +15,8 @@ from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.markdown import Markdown
 
-from hax_repl.runtime import AppRuntime
+from hax_repl.models import FunctionCallRequest
+from hax_repl.runtime import AppRuntime, FunctionCallDecision
 
 COMMANDS = [
     ".help",
@@ -30,6 +32,17 @@ COMMANDS = [
     ".macro",
     ".functions",
     ".functions call",
+    ".mcp list",
+    ".mcp load",
+    ".mcp call",
+    ".agent list",
+    ".agent start",
+    ".agent status",
+    ".agent pause",
+    ".agent resume",
+    ".agent step",
+    ".agent run",
+    ".agent stop",
 ]
 
 
@@ -94,6 +107,35 @@ def _copy_to_clipboard(text: str) -> tuple[bool, str]:
     return False, "Failed to copy to clipboard with available tools."
 
 
+def _interactive_function_call_decision(
+    *,
+    console: Console,
+    status,
+    request: FunctionCallRequest,
+) -> FunctionCallDecision:
+    status.stop()
+    console.print(f"[bold yellow]Function call requested:[/bold yellow] {request.name}")
+    try:
+        parsed_args = json.loads(request.arguments_json)
+        pretty_args = json.dumps(parsed_args, indent=2, sort_keys=True, ensure_ascii=True)
+    except json.JSONDecodeError:
+        pretty_args = request.arguments_json
+    console.print("[dim]arguments:[/dim]")
+    console.print(pretty_args)
+
+    answer = console.input("[cyan]Approve call?[/cyan] [y]es / [n]o / [m]anual-result: ").strip().lower()
+    if answer.startswith("n"):
+        reason = console.input("[cyan]Reject reason (optional):[/cyan] ").strip()
+        status.start()
+        return FunctionCallDecision(action="reject", rejection_reason=reason)
+    if answer.startswith("m"):
+        manual_result = console.input("[cyan]Manual result JSON (or any text):[/cyan] ").strip()
+        status.start()
+        return FunctionCallDecision(action="manual", manual_result_json=manual_result)
+    status.start()
+    return FunctionCallDecision(action="approve")
+
+
 def _render_runtime_response(
     *,
     runtime: AppRuntime,
@@ -136,6 +178,11 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
                 prompt_text,
                 enabled_functions=None,
                 on_visible_token=_on_visible_token,
+                on_function_call_decision=lambda request: _interactive_function_call_decision(
+                    console=console,
+                    status=status,
+                    request=request,
+                ),
             )
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted. Exiting.[/yellow]")
@@ -153,6 +200,71 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
         prompt_text=prompt_text,
         runtime_response=runtime_response,
     )
+    return True
+
+
+def _print_agent_status(runtime: AppRuntime, console: Console) -> None:
+    state = runtime.agent_status()
+    if state is None:
+        console.print("[yellow]No active agent run.[/yellow]")
+        return
+    console.print(
+        f"[bold]Agent[/bold]: {state.agent_name} | "
+        f"step={state.step_index}/{state.max_steps} | "
+        f"paused={state.paused} | done={state.done}"
+    )
+    console.print(f"[dim]goal:[/dim] {state.goal}")
+
+
+def _run_agent_step(runtime: AppRuntime, console: Console) -> bool:
+    state = runtime.agent_status()
+    if state is None:
+        console.print("[yellow]No active agent run. Use .agent start ...[/yellow]")
+        return True
+    if state.paused:
+        console.print("[yellow]Agent is paused. Use .agent resume first.[/yellow]")
+        return True
+    if state.done:
+        console.print("[yellow]Agent run is already done.[/yellow]")
+        return True
+
+    query_index = runtime.next_query_index()
+    first_visible_token_seen = False
+    try:
+        with console.status("[yellow]agent thinking...[/yellow]", spinner="dots") as status:
+
+            def _on_visible_token(token: str) -> None:
+                nonlocal first_visible_token_seen
+                if not first_visible_token_seen:
+                    first_visible_token_seen = True
+                    status.stop()
+                    console.print(f"[red]RESULT [{query_index}]:[/red]")
+
+            runtime_response = runtime.run_agent_step(
+                on_visible_token=_on_visible_token,
+                on_function_call_decision=lambda request: _interactive_function_call_decision(
+                    console=console,
+                    status=status,
+                    request=request,
+                ),
+            )
+    except Exception as exc:
+        console.print(f"[bold red]agent step failed:[/bold red] {exc}")
+        return True
+
+    if runtime_response is None:
+        console.print("[yellow]Agent did not run a step.[/yellow]")
+        return True
+    if not first_visible_token_seen:
+        console.print(f"[red]RESULT [{query_index}]:[/red]")
+    _render_runtime_response(
+        runtime=runtime,
+        console=console,
+        query_index=query_index,
+        prompt_text=runtime_response.prompt_message.original_prompt,
+        runtime_response=runtime_response,
+    )
+    _print_agent_status(runtime, console)
     return True
 
 
@@ -185,6 +297,15 @@ def _handle_command(
         console.print("  .macro <text-with-macros>")
         console.print("  .functions")
         console.print("  .functions call <name> <json-args>")
+        console.print("  .mcp list")
+        console.print("  .mcp load <descriptor.json>")
+        console.print("  .mcp call <client-name> <tool-name> <json-args>")
+        console.print("  .agent list")
+        console.print("  .agent start <agent-name> <goal>")
+        console.print("  .agent status")
+        console.print("  .agent pause | .agent resume")
+        console.print("  .agent step | .agent run [steps]")
+        console.print("  .agent stop")
         return True
 
     if args[0] == ".functions":
@@ -217,6 +338,110 @@ def _handle_command(
         console.print("[yellow]Usage: .functions OR .functions call <name> <json-args>[/yellow]")
         return True
 
+    if args[0] == ".mcp":
+        if len(args) == 2 and args[1] == "list":
+            clients = runtime.list_mcp_clients()
+            if not clients:
+                console.print("[yellow]No MCP clients loaded.[/yellow]")
+                return True
+            console.print("[bold]Loaded MCP clients:[/bold]")
+            for client in clients:
+                tools = ", ".join(client.function_names) if client.function_names else "(no tools)"
+                console.print(f"  - {client.name}: {tools}")
+            return True
+        if len(args) >= 3 and args[1] == "load":
+            path_text = command_text.split("load", 1)[1].strip()
+            if not path_text:
+                console.print("[yellow]Usage: .mcp load <descriptor.json>[/yellow]")
+                return True
+            try:
+                loaded = runtime.load_mcp_descriptor(path_text)
+            except Exception as exc:
+                console.print(f"[bold red]Failed to load MCP descriptor:[/bold red] {exc}")
+                return True
+            console.print(f"[green]Loaded MCP client:[/green] {loaded.name}")
+            return True
+        if len(args) >= 5 and args[1] == "call":
+            client_name = args[2]
+            tool_name = args[3]
+            arguments_json = command_text.split(tool_name, 1)[1].strip()
+            if not arguments_json:
+                console.print("[yellow]Usage: .mcp call <client-name> <tool-name> <json-args>[/yellow]")
+                return True
+            try:
+                result_json = runtime.invoke_mcp_tool(client_name, tool_name, arguments_json)
+            except Exception as exc:
+                console.print(f"[bold red]MCP call failed:[/bold red] {exc}")
+                return True
+            console.print("[green]MCP result:[/green]")
+            console.print(result_json)
+            return True
+        console.print("[yellow]Usage: .mcp <list|load|call> ...[/yellow]")
+        return True
+
+    if args[0] == ".agent":
+        if len(args) == 2 and args[1] == "list":
+            agents = runtime.list_agents()
+            console.print("[bold]Available agents:[/bold]")
+            for name in agents:
+                console.print(f"  - {name}")
+            return True
+        if len(args) >= 4 and args[1] == "start":
+            agent_name = args[2]
+            goal = command_text.split(agent_name, 1)[1].strip()
+            if not goal:
+                console.print("[yellow]Usage: .agent start <agent-name> <goal>[/yellow]")
+                return True
+            try:
+                runtime.start_agent_run(agent_name=agent_name, goal=goal, max_steps=8)
+            except Exception as exc:
+                console.print(f"[bold red]Failed to start agent:[/bold red] {exc}")
+                return True
+            console.print(f"[green]Started agent run:[/green] {agent_name}")
+            _print_agent_status(runtime, console)
+            return True
+        if len(args) == 2 and args[1] == "status":
+            _print_agent_status(runtime, console)
+            return True
+        if len(args) == 2 and args[1] == "pause":
+            if runtime.pause_agent():
+                console.print("[green]Agent paused.[/green]")
+            else:
+                console.print("[yellow]No active agent run.[/yellow]")
+            return True
+        if len(args) == 2 and args[1] == "resume":
+            if runtime.resume_agent():
+                console.print("[green]Agent resumed.[/green]")
+            else:
+                console.print("[yellow]No active agent run.[/yellow]")
+            return True
+        if len(args) == 2 and args[1] == "step":
+            return _run_agent_step(runtime, console)
+        if len(args) >= 2 and args[1] == "run":
+            max_steps = 3
+            if len(args) >= 3:
+                try:
+                    max_steps = max(1, int(args[2]))
+                except ValueError:
+                    console.print("[yellow]Usage: .agent run [steps][/yellow]")
+                    return True
+            for _ in range(max_steps):
+                state = runtime.agent_status()
+                if state is None or state.paused or state.done:
+                    break
+                if not _run_agent_step(runtime, console):
+                    return False
+            _print_agent_status(runtime, console)
+            return True
+        if len(args) == 2 and args[1] == "stop":
+            runtime.clear_agent_run()
+            console.print("[green]Cleared active agent run.[/green]")
+            return True
+        console.print(
+            "[yellow]Usage: .agent <list|start|status|pause|resume|step|run|stop> ...[/yellow]"
+        )
+        return True
+
     if args[0] == ".conversation":
         if len(args) < 2:
             console.print("[yellow]Usage: .conversation <delete-last-message|generate-again>[/yellow]")
@@ -240,7 +465,14 @@ def _handle_command(
                             status.stop()
                             console.print(f"[red]RESULT [{query_index}]:[/red]")
 
-                    runtime_response = runtime.generate_again(on_visible_token=_on_visible_token)
+                    runtime_response = runtime.generate_again(
+                        on_visible_token=_on_visible_token,
+                        on_function_call_decision=lambda request: _interactive_function_call_decision(
+                            console=console,
+                            status=status,
+                            request=request,
+                        ),
+                    )
             except Exception as exc:
                 console.print(f"[bold red]generate-again failed:[/bold red] {exc}")
                 return True

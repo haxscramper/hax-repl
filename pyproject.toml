@@ -19,6 +19,14 @@ hax-repl = "hax_repl.cli:main"
 example_functions = "hax_repl.plugins.functions.examples:ExampleFunctionProvider"
 json_functions = "hax_repl.plugins.functions.examples:JsonFunctionProvider"
 
+[project.entry-points."hax_repl.mcp_clients"]
+example_fs = "hax_repl.plugins.mcp.examples:example_fs_mcp_client"
+example_time = "hax_repl.plugins.mcp.examples:example_time_mcp_client"
+
+[project.entry-points."hax_repl.agents"]
+code_exec = "hax_repl.plugins.agents.examples:CodeExecAgentPlugin"
+research = "hax_repl.plugins.agents.examples:ResearchAgentPlugin"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

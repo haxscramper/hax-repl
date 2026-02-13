@@ -40,4 +40,23 @@ In REPL:
 - Let model call tools automatically:
   - `Use available tools to list files in the current directory and summarize them.`
 
+### MCP and agent loop quick start
+
+- List loaded MCP clients:
+  - `.mcp list`
+- Load MCP client from descriptor JSON:
+  - `.mcp load examples/mcp_time_descriptor.json`
+- Invoke MCP method directly:
+  - `.mcp call example-time now_utc {}`
+- List available agents:
+  - `.agent list`
+- Start and run an agent:
+  - `.agent start code-exec "Inspect the project and summarize next refactor steps"`
+  - `.agent run 3`
+- Pause/resume/step/status:
+  - `.agent pause`
+  - `.agent resume`
+  - `.agent step`
+  - `.agent status`
+
 See `docs/plugins.md` for full plugin authoring and usage instructions.
