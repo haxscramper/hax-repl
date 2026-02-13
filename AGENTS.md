@@ -20,6 +20,22 @@ This file describes the current architecture and conventions for contributors an
   - concrete RAG providers (vector + full-text), runtime registry, macro-driven retrieval
 - Advanced features are implemented across phases 0-6 for POC scope, with production hardening gaps remaining.
 
+## Current Implementation Snapshot
+
+- Runtime composition:
+  - single `AppRuntime` orchestrates session/message persistence, function/tool loop, MCP registration, RAG registry, macro expansion, and agent run state
+- Function/tool execution:
+  - OpenRouter tool-calling loop with per-call user decision in REPL (approve/reject/manual payload)
+  - tool requests/results persisted on each `ResponseMessage`
+- Plugin loading model:
+  - entry-point based plugin discovery with fail-fast initialization
+  - one-file-per-example plugin modules under `src/hax_repl/plugins/*`
+- RAG:
+  - provider-backed indexing/query commands and macro-triggered retrieval
+  - Chroma provider uses OpenAI embeddings API, Tantivy provides full-text retrieval
+- Agent loop:
+  - single active agent run, step-based execution, pause/resume/step/run controls
+
 ## Implementation Phases and Status
 
 Legend:
@@ -237,8 +253,9 @@ Function-calling APIs currently available:
 
 - API key env var: `HAXSCRAMPER_LLM_REPL_KEY`
 - Default model: `anthropic/claude-sonnet-4.5`
-- OpenRouter API key env var for Chroma RAG embeddings: `HAXSCRAMPER_LLM_REPL_KEY`
-- Optional embedding model override: `HAX_REPL_EMBEDDING_MODEL` (default `openai/text-embedding-3-small`)
+- OpenAI embeddings API key for Chroma RAG: `OPENAI_API_KEY`
+- Optional OpenAI base URL: `OPENAI_BASE_URL`
+- Optional embedding model override: `HAX_REPL_EMBEDDING_MODEL` (default `text-embedding-3-small`)
 
 ## Extension Points (Scaffolded)
 
@@ -266,3 +283,67 @@ Function-calling APIs currently available:
 - Function calling exists but lacks provider/agent-level configuration UX
 - No production-grade external MCP transport client yet (current implementation focuses on local/adapted MCP clients)
 - Agent loop is currently single-active-run and REPL-driven (no background scheduler)
+
+## Future Testing Strategy (Detailed)
+
+- Unit tests:
+  - hashing determinism (`content_hash`, `context_hash`) with stable golden inputs
+  - macro parsing/expansion behavior for plain macros and `$(rag:...)` forms
+  - command parser and command dispatch helpers in REPL (no network)
+  - function registry validation (name regex, schema hashing, invocation conversion)
+  - session/message store roundtrip and deletion flows
+- Contract tests for plugin interfaces:
+  - function providers: `provider_name`, function schema validity, invocation JSON behavior
+  - RAG providers: `list_indices/query/update_index` behavior and chunk shape guarantees
+  - MCP clients: tool listing and invoke result serialization contracts
+  - agent plugins: stop conditions and step prompt formatting contracts
+- Integration tests (local):
+  - end-to-end prompt turn with mocked OpenRouter responses (tool calls + plain text)
+  - `.conversation generate-again` path with/without tool calls
+  - `.rag update/.rag query` index lifecycle with temporary files
+  - `.agent start/.agent step/.agent run` state transitions
+- REPL behavior tests:
+  - key bindings (`Ctrl+J`, `Esc+Enter`, Ctrl+D/Ctrl+C exit)
+  - command completion smoke checks
+  - snapshot/golden assertions for critical output blocks (`QUERY`, `RESULT`, stats, function approval prompt)
+- Failure-mode tests:
+  - HTTP 4xx/5xx payload surfacing and error formatting
+  - plugin init failures (fail-fast startup), malformed descriptor handling
+  - rejected/manual function call decision handling
+- CI strategy:
+  - fast lane: unit + contract tests on every push
+  - full lane: integration + snapshot tests on PR and nightly
+  - optional marker split: `pytest -m "not slow"` for default CI and `-m slow` for nightly
+
+## Guidance For Adding New Plugin Elements
+
+- File layout:
+  - keep one example per file under `src/hax_repl/plugins/<group>/`
+  - prefer names like `example_<feature>.py` or `<feature>_provider.py`
+- Registration:
+  - add entry point in `pyproject.toml` under the correct group:
+    - `hax_repl.function_providers`
+    - `hax_repl.rag_providers`
+    - `hax_repl.mcp_clients`
+    - `hax_repl.agents`
+  - after changes, run `uv sync` so entry points refresh
+- Validation checklist:
+  - plugin object exposes required protocol methods
+  - function names match `^[A-Za-z0-9_-]{1,64}$`
+  - JSON args/results are deterministic and serializable
+  - plugin initialization fails loudly and early when misconfigured
+- RAG provider guidance:
+  - keep provider-specific persistence under `~/.local/share/haxllm/rag/<provider>/`
+  - ensure `query` and `update_index` support options JSON (`top_k`, chunk params)
+  - return concise chunk text to avoid prompt bloat
+- MCP plugin guidance:
+  - if wrapping local classes, use adapter-safe method names and typed kwargs
+  - ensure direct `.mcp call` and model tool-calling both work
+- Agent plugin guidance:
+  - build short, deterministic step prompts
+  - include explicit termination marker logic in `should_stop`
+  - keep max-steps safe to prevent runaway loops
+- Documentation updates required with each new plugin:
+  - update `README.md` quick-start examples
+  - update `docs/plugins.md` registration/use instructions
+  - update this file (`AGENTS.md`) phase status and known gaps
