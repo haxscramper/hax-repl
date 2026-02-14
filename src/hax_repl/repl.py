@@ -295,16 +295,6 @@ def _build_repl_click_group() -> click.Group:
         state.pending_includes.append(expanded)
         state.console.print("[green]Expanded macro text queued for next query.[/green]")
 
-    def _print_loaded_functions(state: ReplCommandContext) -> None:
-        loaded = state.runtime.list_functions()
-        if not loaded:
-            state.console.print("[yellow]No functions loaded.[/yellow]")
-            return
-        state.console.print("[bold]Loaded functions:[/bold]")
-        for function in loaded:
-            state.console.print(
-                f"  - {function.name} (schema_hash={function.schema_hash})")
-
     @repl_commands.group(
         help="Inspect loaded functions and invoke tools manually.",
         invoke_without_command=True,
@@ -312,16 +302,31 @@ def _build_repl_click_group() -> click.Group:
     @click.pass_context
     def functions(ctx: click.Context) -> None:
         """Function provider commands."""
-        if ctx.invoked_subcommand is not None:
+
+    @functions.command(name="loaded", help="List loaded functions with schema hashes.")
+    @click.pass_obj
+    def functions_loaded(state: ReplCommandContext) -> None:
+        """Display all currently loaded function tools."""
+        loaded = state.runtime.list_enabled_functions()
+        if not loaded:
+            state.console.print("[yellow]No functions loaded.[/yellow]")
             return
-        state = cast(ReplCommandContext, ctx.obj)
-        _print_loaded_functions(state)
+        state.console.print("[bold]Loaded functions:[/bold]")
+        for function in loaded:
+            state.console.print(f"  - {function.name} {function}")
 
     @functions.command(name="list", help="List loaded functions with schema hashes.")
     @click.pass_obj
     def functions_list(state: ReplCommandContext) -> None:
-        """Display all currently registered function tools."""
-        _print_loaded_functions(state)
+        """Display all currently loaded function tools."""
+        loaded = state.runtime._function_registry.all_specs()
+        if not loaded:
+            state.console.print("[yellow]No functions registered.[/yellow]")
+            return
+
+        state.console.print("[bold]Registered functions:[/bold]")
+        for function in loaded:
+            state.console.print(f"  - {function.name} {function.description}")
 
     @functions.command(name="call", help="Invoke a loaded function with JSON arguments.")
     @click.argument("name")
@@ -685,9 +690,16 @@ def _render_runtime_response(
     runtime_response: RuntimeResponse,
 ) -> None:
     "Format statistics about the model and query processing time."
-    console.print(
-        f"[dim]stats: model={runtime.model_name} | session={runtime.session.session.value} | "
-        f"prompt_chars={len(prompt_text)}[/dim]")
+    console.print("[dim]" + " | ".join([
+        f"stats: model={runtime.model_name}",
+        f"session={runtime.session.session.value}",
+        f"prompt_chars={len(prompt_text)}",
+        f"total={runtime_response.stats.elapsed_ms} ms",
+        f"first_token={runtime_response.stats.time_until_first_token_ms} ms",
+        f"thinking={runtime_response.stats.model_thinking_ms} ms",
+        f"query_chars={runtime_response.stats.query_chars}",
+        f"response_chars={runtime_response.stats.response_chars}",
+    ]) + "[/dim]")
 
     visible_text = runtime_response.response_message.text
 
@@ -702,13 +714,6 @@ def _render_runtime_response(
 
     else:
         console.print("[dim](empty response)[/dim]")
-
-    console.print(
-        f"[dim]done: total={runtime_response.stats.elapsed_ms} ms | "
-        f"first_token={runtime_response.stats.time_until_first_token_ms} ms | "
-        f"thinking={runtime_response.stats.model_thinking_ms} ms | "
-        f"query_chars={runtime_response.stats.query_chars} | "
-        f"response_chars={runtime_response.stats.response_chars}[/dim]",)
 
 
 def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int,
@@ -726,7 +731,6 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
 
             runtime_response = runtime.send_prompt(
                 prompt_text,
-                enabled_functions=None,
                 on_visible_token=_on_visible_token,
                 on_function_call_decision=lambda request:
                 _interactive_function_call_decision(
@@ -735,12 +739,10 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
                     request=request,
                 ),
             )
+
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted. Exiting.[/yellow]")
         return False
-    except Exception as exc:
-        console.print(f"[bold red]request failed:[/bold red] {exc}")
-        return True
 
     if not first_visible_token_seen:
         console.print(f"[red]RESULT [{query_index}]:[/red]")
@@ -857,6 +859,11 @@ def run_repl(runtime: AppRuntime) -> None:
     console.print(
         "[dim]Submit: Ctrl+J, Esc+Enter, or Ctrl+Enter (CSI-u terminals). New line: Enter. Complete: Tab.[/dim]"
     )
+
+    # console.print("Registered functions")
+    # for f in runtime._function_registry.all_specs():
+    #     console.print(f"  {f.name} {f.description}")
+
     while True:
         query_index = runtime.next_query_index()
         console.print(f"[cyan]{runtime.prompt_state_label}[/cyan]")

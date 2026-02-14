@@ -5,10 +5,15 @@ import json
 import logging
 from pathlib import Path
 from time import monotonic
-from typing import Callable, Literal, Sequence
+from typing import Callable, List, Literal, Sequence
 
 from hax_repl.agents import AgentPlugin, AgentRunState, DefaultInteractiveAgent
-from hax_repl.functions import BuiltinFunctionProvider, FunctionProvider, FunctionRegistry
+from hax_repl.functions import (
+    BuiltinFunctionProvider,
+    FunctionProvider,
+    FunctionRegistry,
+    FunctionSpec,
+)
 from hax_repl.hashing import (
     content_hash_for_prompt,
     content_hash_for_response,
@@ -32,7 +37,6 @@ from hax_repl.message_store import MessageStore
 from hax_repl.models import (
     AnyMessage,
     ContextHashID,
-    EnabledFunction,
     FunctionCallRequest,
     FunctionCallResult,
     ModelName,
@@ -116,6 +120,7 @@ class AppRuntime:
         self._session: SessionFile = self._session_store.load_or_create(resolved_name)
         self._default_role = RoleName(value="user")
         self._default_agent = "default-agent"
+        self._enabled_functions: List[str] = []
 
     def _loaded_plugins_for(self, kind: str) -> list[LoadedPlugin]:
         return [plugin for plugin in self._loaded_plugins if plugin.kind == kind]
@@ -242,23 +247,12 @@ class AppRuntime:
         return messages
 
     def _enabled_function_refs(
-            self, enabled_function_names: Sequence[str] | None) -> list[EnabledFunction]:
-        specs = self._function_registry.enabled_specs(
+            self, enabled_function_names: Sequence[str] | None) -> list[FunctionSpec]:
+        return self._function_registry.enabled_specs(
             list(enabled_function_names) if enabled_function_names else None)
-        return [
-            EnabledFunction(name=spec.name,
-                            schema_hash=self._function_registry.schema_hash_for(spec))
-            for spec in specs
-        ]
 
-    def _function_schema_hashes(self, refs: Sequence[EnabledFunction]) -> list[str]:
-        return [ref.schema_hash for ref in refs]
-
-    def list_functions(self) -> list[EnabledFunction]:
-        return [
-            EnabledFunction(name=name, schema_hash=schema_hash)
-            for name, schema_hash in self._function_registry.list_with_schema_hashes()
-        ]
+    def list_enabled_functions(self) -> list[FunctionSpec]:
+        return self._function_registry.enabled_specs()
 
     def invoke_function(self, function_name: str, arguments_json: str) -> str:
         return self._function_registry.invoke_json(function_name, arguments_json)
@@ -365,10 +359,10 @@ class AppRuntime:
         )
         response = self.send_prompt(
             prompt,
-            enabled_functions=None,
             on_visible_token=on_visible_token,
             on_function_call_decision=on_function_call_decision,
         )
+
         state.step_history.append(response.response_message.text)
         state.last_response = response.response_message.text
         state.done = plugin.should_stop(
@@ -477,14 +471,13 @@ class AppRuntime:
     def send_prompt(
         self,
         original_prompt: str,
-        enabled_functions: Sequence[str] | None = None,
         on_visible_token: Callable[[str], None] | None = None,
         on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
         None = None,
     ) -> RuntimeResponse:
-        logging.info(f"Send prompt, enabled functions: {enabled_functions}")
+        logging.info(f"Send prompt, enabled functions: {self._enabled_functions}")
 
-        enabled_function_refs = self._enabled_function_refs(enabled_functions)
+        enabled_function_refs = self._enabled_function_refs(self._enabled_functions)
         included_context_ids = [cid.md5 for cid in self._session.message_ids]
         macro_expansion = self._expand_prompt_with_macros(original_prompt)
         augmented_prompt = macro_expansion.expanded_text
@@ -496,14 +489,12 @@ class AppRuntime:
         prompt_content_id = content_hash_for_prompt(
             original_prompt=original_prompt,
             augmented_prompt=augmented_prompt,
-            enabled_functions=enabled_function_refs,
             included_context_ids=included_context_ids,
         )
 
         prompt_context_id = context_hash(
             content_hash=prompt_content_id,
             model_name=self._model_name,
-            function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
             rag_provenance=rag_provenance,
         )
 
@@ -514,7 +505,6 @@ class AppRuntime:
             original_prompt=original_prompt,
             augmented_prompt=augmented_prompt,
             included_context=[ContextHashID(md5=cid) for cid in included_context_ids],
-            enabled_functions=enabled_function_refs,
         )
 
         llm_messages = self._conversation_messages()
@@ -594,7 +584,6 @@ class AppRuntime:
         response_context_id = context_hash(
             content_hash=response_content_id,
             model_name=self._model_name,
-            function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
             rag_provenance=rag_provenance,
         )
 
@@ -655,7 +644,6 @@ class AppRuntime:
         prompt_content_id = content_hash_for_prompt(
             original_prompt=text,
             augmented_prompt=augmented_prompt,
-            enabled_functions=[],
             included_context_ids=included_context_ids,
         )
         prompt_context_id = context_hash(
@@ -671,7 +659,6 @@ class AppRuntime:
             original_prompt=text,
             augmented_prompt=augmented_prompt,
             included_context=[ContextHashID(md5=cid) for cid in included_context_ids],
-            enabled_functions=[],
         )
         self._message_store.upsert(prompt_message)
         self._session = self._session_store.append_prompt(self._session,
@@ -721,11 +708,9 @@ class AppRuntime:
         if current_last_prompt is not None and current_last_prompt.context_id.md5 == last_prompt.context_id.md5:
             if not self.delete_last_message():
                 return None
+
         return self.send_prompt(
             last_prompt.original_prompt,
-            enabled_functions=[
-                function.name for function in last_prompt.enabled_functions
-            ],
             on_visible_token=on_visible_token,
             on_function_call_decision=on_function_call_decision,
         )

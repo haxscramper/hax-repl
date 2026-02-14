@@ -5,7 +5,7 @@ import hashlib
 import json
 from typing import Sequence
 
-from hax_repl.models import ContentHashID, ContextHashID, EnabledFunction
+from hax_repl.models import ContentHashID, ContextHashID
 
 
 def _md5_for_json(payload: object) -> str:
@@ -20,17 +20,12 @@ def content_hash_for_prompt(
     *,
     original_prompt: str,
     augmented_prompt: str,
-    enabled_functions: Sequence[EnabledFunction],
     included_context_ids: Sequence[str],
 ) -> ContentHashID:
     return ContentHashID(md5=_md5_for_json({
         "kind": "prompt",
         "original_prompt": original_prompt,
         "augmented_prompt": augmented_prompt,
-        "enabled_functions": [{
-            "name": function.name,
-            "schema_hash": function.schema_hash
-        } for function in enabled_functions],
         "included_context_ids": list(included_context_ids),
     }))
 
@@ -55,13 +50,11 @@ def context_hash(
     *,
     content_hash: ContentHashID,
     model_name: str,
-    function_schema_hashes: Sequence[str],
     rag_provenance: Sequence[str],
 ) -> ContextHashID:
     return ContextHashID(md5=_md5_for_json({
         "content_hash": content_hash.md5,
         "model_name": model_name,
-        "function_schema_hashes": list(function_schema_hashes),
         "rag_provenance": list(rag_provenance),
     }))
 

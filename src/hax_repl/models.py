@@ -4,6 +4,8 @@ from typing import Literal, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
+from hax_repl.functions import FunctionSpec
+
 
 class ContentHashID(BaseModel):
     md5: str = Field(..., pattern=r"^[a-f0-9]{32}$")
@@ -31,11 +33,6 @@ class FunctionCallResult(BaseModel):
     result_json: str
 
 
-class EnabledFunction(BaseModel):
-    name: str
-    schema_hash: str = Field(..., pattern=r"^[a-f0-9]{32}$")
-
-
 class PromptMessage(BaseModel):
     kind: Literal["prompt"] = "prompt"
     context_id: ContextHashID
@@ -44,7 +41,7 @@ class PromptMessage(BaseModel):
     original_prompt: str
     augmented_prompt: str
     included_context: Sequence[ContextHashID] = Field(default_factory=list)
-    enabled_functions: Sequence[EnabledFunction] = Field(default_factory=list)
+    enabled_functions: Sequence[str] = Field(default_factory=list)
 
 
 class ResponseMessage(BaseModel):
