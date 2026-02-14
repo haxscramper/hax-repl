@@ -17,7 +17,8 @@ class SessionStore:
     def resolve_session_name(self, explicit_name: str | None) -> SessionName:
         if explicit_name:
             return SessionName(value=explicit_name)
-        return SessionName(value=datetime.now(timezone.utc).isoformat())
+
+        return SessionName(value=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
 
     def _path_for(self, session_name: SessionName) -> Path:
         return self._root_dir / f"{session_name.value}.yaml"

@@ -482,6 +482,8 @@ class AppRuntime:
         on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
         None = None,
     ) -> RuntimeResponse:
+        logging.info(f"Send prompt, enabled functions: {enabled_functions}")
+
         enabled_function_refs = self._enabled_function_refs(enabled_functions)
         included_context_ids = [cid.md5 for cid in self._session.message_ids]
         macro_expansion = self._expand_prompt_with_macros(original_prompt)
@@ -497,12 +499,14 @@ class AppRuntime:
             enabled_functions=enabled_function_refs,
             included_context_ids=included_context_ids,
         )
+
         prompt_context_id = context_hash(
             content_hash=prompt_content_id,
             model_name=self._model_name,
             function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
             rag_provenance=rag_provenance,
         )
+
         prompt_message = PromptMessage(
             context_id=prompt_context_id,
             content_id=prompt_content_id,
@@ -561,6 +565,7 @@ class AppRuntime:
                     first_visible_token_at = monotonic()
             visible_text = visible_so_far.strip()
             thinking_text = thinking_so_far.strip()
+
         response_content_id = content_hash_for_response(
             text=visible_text,
             function_calls_json=[
@@ -585,12 +590,14 @@ class AppRuntime:
             ],
             thinking_text=thinking_text,
         )
+
         response_context_id = context_hash(
             content_hash=response_content_id,
             model_name=self._model_name,
             function_schema_hashes=self._function_schema_hashes(enabled_function_refs),
             rag_provenance=rag_provenance,
         )
+
         response_message = ResponseMessage(
             context_id=response_context_id,
             content_id=response_content_id,
@@ -601,6 +608,7 @@ class AppRuntime:
             function_results=function_call_results,
             thinking_text=thinking_text,
         )
+
         self._message_store.upsert(response_message)
         self._session = self._session_store.attach_response_to_last_turn(
             self._session, response_context_id)

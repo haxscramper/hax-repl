@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
-from typing import Any, Callable, Generic, Protocol, TypeVar
+from typing import Any, Callable, Generic, Protocol, Sequence, TypeVar
 
 from pydantic import BaseModel
 
@@ -41,6 +41,7 @@ class FunctionRegistry:
             raise ValueError(
                 "Invalid function name "
                 f"'{function_spec.name}'. Must match {FUNCTION_NAME_PATTERN.pattern}")
+
         self._functions[function_spec.name] = function_spec
 
     def all_specs(self) -> list[FunctionSpec[BaseModel, Any]]:
@@ -52,15 +53,19 @@ class FunctionRegistry:
     def get(self, name: str) -> FunctionSpec[BaseModel, Any]:
         if name not in self._functions:
             raise KeyError(f"Unknown function: {name}")
+
         return self._functions[name]
 
     def enabled_specs(
         self,
         enabled_function_names: list[str] | None = None
     ) -> list[FunctionSpec[BaseModel, Any]]:
+
         if enabled_function_names is None or not enabled_function_names:
-            return self.all_specs()
+            return []
+
         specs: list[FunctionSpec[BaseModel, Any]] = []
+
         for name in enabled_function_names:
             specs.append(self.get(name))
         return specs
@@ -94,6 +99,7 @@ class FunctionRegistry:
     def to_tool_specs(
             self,
             enabled_function_names: list[str] | None = None) -> list[dict[str, object]]:
+
         tools: list[dict[str, object]] = []
         for spec in self.enabled_specs(enabled_function_names):
             tools.append({
@@ -133,7 +139,7 @@ class BuiltinFunctionProvider:
     def provider_name(self) -> str:
         return "builtin"
 
-    def functions(self) -> list[FunctionSpec[BaseModel, Any]]:
+    def functions(self) -> Sequence[FunctionSpec[BaseModel, Any]]:
         return [
             FunctionSpec(
                 name="python_eval",

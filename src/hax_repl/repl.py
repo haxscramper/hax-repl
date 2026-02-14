@@ -1,12 +1,12 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import textwrap
 from typing import cast
 
@@ -16,10 +16,10 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
-from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 from hax_repl.models import FunctionCallRequest
-from hax_repl.runtime import AppRuntime, FunctionCallDecision
+from hax_repl.runtime import AppRuntime, FunctionCallDecision, RuntimeResponse
 
 
 @dataclass
@@ -49,6 +49,22 @@ def _build_prompt_session(command_phrases: list[str]) -> PromptSession[str]:
     @bindings.add("escape", "[", "2", "7", ";", "5", ";", "1", "3", "~")
     def _submit_with_legacy_ctrl_enter(event) -> None:  # type: ignore[no-untyped-def]
         event.current_buffer.validate_and_handle()
+
+    @bindings.add("c-o")
+    def _edit_in_editor(event) -> None:
+        buffer = event.current_buffer
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(buffer.text)
+            temp_path = f.name
+
+        editor = os.environ.get("EDITOR", "vim")
+        subprocess.call([editor, temp_path])
+
+        with open(temp_path, "r") as f:
+            buffer.text = f.read()
+
+        os.unlink(temp_path)
+        buffer.cursor_position = len(buffer.text)
 
     completer = WordCompleter(command_phrases, ignore_case=True, sentence=True)
     return PromptSession(
@@ -155,15 +171,18 @@ def _build_repl_click_group() -> click.Group:
                         request=request,
                     ),
                 )
+
         except Exception as exc:
             state.console.print(f"[bold red]generate-again failed:[/bold red] {exc}")
             return
 
         if runtime_response is None:
             state.console.print("[yellow]No previous prompt to regenerate.[/yellow]")
+
             return
         if not first_visible_token_seen:
             state.console.print(f"[red]RESULT [{query_index}]:[/red]")
+
         _render_runtime_response(
             runtime=state.runtime,
             console=state.console,
@@ -663,21 +682,33 @@ def _render_runtime_response(
     console: Console,
     query_index: int,
     prompt_text: str,
-    runtime_response,
+    runtime_response: RuntimeResponse,
 ) -> None:
+    "Format statistics about the model and query processing time."
     console.print(
         f"[dim]stats: model={runtime.model_name} | session={runtime.session.session.value} | "
         f"prompt_chars={len(prompt_text)}[/dim]")
+
     visible_text = runtime_response.response_message.text
+
     if visible_text:
-        console.print(Markdown(visible_text))
+        console.print(
+            Syntax(
+                visible_text,
+                "markdown",
+                word_wrap=False,
+                background_color="default",
+            ))
+
     else:
         console.print("[dim](empty response)[/dim]")
-    console.print(f"[dim]done: total={runtime_response.stats.elapsed_ms} ms | "
-                  f"first_token={runtime_response.stats.time_until_first_token_ms} ms | "
-                  f"thinking={runtime_response.stats.model_thinking_ms} ms | "
-                  f"query_chars={runtime_response.stats.query_chars} | "
-                  f"response_chars={runtime_response.stats.response_chars}[/dim]")
+
+    console.print(
+        f"[dim]done: total={runtime_response.stats.elapsed_ms} ms | "
+        f"first_token={runtime_response.stats.time_until_first_token_ms} ms | "
+        f"thinking={runtime_response.stats.model_thinking_ms} ms | "
+        f"query_chars={runtime_response.stats.query_chars} | "
+        f"response_chars={runtime_response.stats.response_chars}[/dim]",)
 
 
 def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int,
@@ -713,6 +744,7 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
 
     if not first_visible_token_seen:
         console.print(f"[red]RESULT [{query_index}]:[/red]")
+
     _render_runtime_response(
         runtime=runtime,
         console=console,
@@ -720,6 +752,7 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
         prompt_text=prompt_text,
         runtime_response=runtime_response,
     )
+
     return True
 
 
@@ -812,7 +845,7 @@ def _handle_command(
 
 
 def _end_repl(runtime: AppRuntime, console: Console) -> None:
-    console.print(f"EXITING REPL")
+    console.print("EXITING REPL")
 
 
 def run_repl(runtime: AppRuntime) -> None:
@@ -837,7 +870,11 @@ def run_repl(runtime: AppRuntime) -> None:
                 default=default_text,
             )
 
-        except (EOFError, KeyboardInterrupt):
+        except KeyboardInterrupt:
+            console.print("[dim]Interrupted[/dim]")
+            continue
+
+        except EOFError:
             _end_repl(runtime, console)
             return
 
@@ -846,12 +883,17 @@ def run_repl(runtime: AppRuntime) -> None:
             continue
 
         if prompt_text.startswith("."):
-            keep_running = _handle_command(
-                runtime=runtime,
-                console=console,
-                command_text=prompt_text,
-                pending_includes=pending_includes,
-            )
+            try:
+                keep_running = _handle_command(
+                    runtime=runtime,
+                    console=console,
+                    command_text=prompt_text,
+                    pending_includes=pending_includes,
+                )
+            except KeyboardInterrupt:
+                console.print("[dim]Command interrupted[/dim]")
+                continue
+
             if not keep_running:
                 _end_repl(runtime, console)
                 return
@@ -859,11 +901,16 @@ def run_repl(runtime: AppRuntime) -> None:
             continue
 
         pending_includes.clear()
-        keep_running = _run_streaming_query(
-            runtime=runtime,
-            console=console,
-            query_index=query_index,
-            prompt_text=prompt_text,
-        )
+        try:
+            keep_running = _run_streaming_query(
+                runtime=runtime,
+                console=console,
+                query_index=query_index,
+                prompt_text=prompt_text,
+            )
+        except KeyboardInterrupt:
+            console.print("[dim]Query interrupted[/dim]")
+            continue
+
         if not keep_running:
             return

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+from pprint import pformat
 from typing import Any, Iterable, Sequence
 
 import httpx
@@ -91,14 +92,20 @@ class OpenRouterClient:
         messages: list[ChatMessage],
         tool_specs: Sequence[dict[str, object]],
     ) -> ChatCompletionResult:
+
         request_payload: dict[str, Any] = {
             "model": self._model_name,
             "messages": [_serialize_message(m) for m in messages],
             "stream": False,
         }
+
+        logging.debug(f"Request payload with {len(messages)} messages")
+
         if tool_specs:
             request_payload["tools"] = list(tool_specs)
+            logging.debug(f"provided tools:\n{pformat(tool_specs)}")
             request_payload["tool_choice"] = "auto"
+
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",

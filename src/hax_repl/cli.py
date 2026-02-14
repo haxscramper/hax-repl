@@ -14,9 +14,13 @@ def configure_logging() -> Path:
     log_file = logs_dir / "hax-repl.log"
 
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.FileHandler(log_file, encoding="utf-8")],
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
+        handlers=[logging.FileHandler(
+            log_file,
+            encoding="utf-8",
+            mode="w",
+        )],
         force=True,
     )
     logging.getLogger("httpx").setLevel(logging.INFO)
