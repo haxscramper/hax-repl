@@ -57,10 +57,12 @@ class OpenRouterClient:
             "messages": [_serialize_message(m) for m in messages],
             "stream": True,
         }
+
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+
         with httpx.stream(
                 "POST",
                 OPENROUTER_URL,
@@ -110,12 +112,14 @@ class OpenRouterClient:
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+
         response = httpx.post(
             OPENROUTER_URL,
             headers=headers,
             json=request_payload,
             timeout=120.0,
         )
+
         _raise_for_status_with_details(response)
         payload = response.json()
         choices = payload.get("choices", [])
@@ -131,10 +135,13 @@ def _serialize_message(message: ChatMessage) -> dict[str, object]:
     payload: dict[str, object] = {"role": message.role}
     if message.content is not None:
         payload["content"] = message.content
+
     if message.name is not None:
         payload["name"] = message.name
+
     if message.tool_call_id is not None:
         payload["tool_call_id"] = message.tool_call_id
+
     if message.tool_calls:
         payload["tool_calls"] = [{
             "id": call.id,
@@ -151,15 +158,19 @@ def _extract_content_delta(event: dict[str, object]) -> str:
     choices = event.get("choices")
     if not isinstance(choices, list) or not choices:
         return ""
+
     first = choices[0]
     if not isinstance(first, dict):
         return ""
+
     delta = first.get("delta")
     if not isinstance(delta, dict):
         return ""
+
     content = delta.get("content")
     if isinstance(content, str):
         return content
+
     if isinstance(content, list):
         parts: list[str] = []
         for item in content:
@@ -168,15 +179,18 @@ def _extract_content_delta(event: dict[str, object]) -> str:
                 if isinstance(text, str):
                     parts.append(text)
         return "".join(parts)
+
     return ""
 
 
 def _extract_message_text(message: object) -> str:
     if not isinstance(message, dict):
         return ""
+
     content = message.get("content")
     if isinstance(content, str):
         return content
+
     if isinstance(content, list):
         parts: list[str] = []
         for item in content:
@@ -185,27 +199,33 @@ def _extract_message_text(message: object) -> str:
                 if isinstance(text, str):
                     parts.append(text)
         return "".join(parts)
+
     return ""
 
 
 def _extract_tool_calls(message: object) -> list[ToolCall]:
     if not isinstance(message, dict):
         return []
+
     raw_tool_calls = message.get("tool_calls")
     if not isinstance(raw_tool_calls, list):
         return []
+
     calls: list[ToolCall] = []
     for raw in raw_tool_calls:
         if not isinstance(raw, dict):
             continue
+
         call_id = raw.get("id")
         function_data = raw.get("function")
         if not isinstance(call_id, str) or not isinstance(function_data, dict):
             continue
+
         name = function_data.get("name")
         arguments = function_data.get("arguments")
         if not isinstance(name, str) or not isinstance(arguments, str):
             continue
+
         calls.append(ToolCall(id=call_id, name=name, arguments_json=arguments))
     return calls
 

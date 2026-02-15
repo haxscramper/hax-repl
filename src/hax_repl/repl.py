@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
-from typing import cast
+from typing import cast, Optional
 
 import click
 from prompt_toolkit import PromptSession
@@ -18,6 +18,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from rich.console import Console
 from rich.syntax import Syntax
 
+from hax_repl.hashing import SeparatedResponseText
 from hax_repl.models import FunctionCallRequest
 from hax_repl.runtime import AppRuntime, FunctionCallDecision, RuntimeResponse
 
@@ -718,20 +719,33 @@ def _render_runtime_response(
 
 def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int,
                          prompt_text: str) -> bool:
+    from time import monotonic
     first_visible_token_seen = False
+    current_response: Optional[SeparatedResponseText] = None
+    last_update = 0.0
+
     try:
         with console.status("[yellow]thinking...[/yellow]", spinner="dots") as status:
 
-            def _on_visible_token(token: str) -> None:
-                nonlocal first_visible_token_seen
-                if not first_visible_token_seen:
+            def _on_chunk(response):
+                nonlocal first_visible_token_seen, current_response, last_update
+                current_response = response
+
+                # update status text while thinking/streaming (throttle to avoid spam)
+                now = monotonic()
+                if now - last_update > 0.1:  # 10 fps-ish
+                    status.update(f"[yellow]thinking {len(response.thinking_text)} "
+                                  f"visible {len(response.visible_text)}...[/yellow]")
+                    last_update = now
+
+                if not first_visible_token_seen and response.visible_text:
                     first_visible_token_seen = True
-                    status.stop()
+                    status.stop()  # stops the spinner/live status
                     console.print(f"[red]RESULT [{query_index}]:[/red]")
 
             runtime_response = runtime.send_prompt(
                 prompt_text,
-                on_visible_token=_on_visible_token,
+                on_chunk=_on_chunk,
                 on_function_call_decision=lambda request:
                 _interactive_function_call_decision(
                     console=console,
@@ -855,9 +869,8 @@ def run_repl(runtime: AppRuntime) -> None:
     prompt_session = _build_prompt_session(COMMAND_PHRASES)
     pending_includes: list[str] = []
 
-    console.print("[bold]HAX LLM REPL[/bold]  (type .exit to quit)")
     console.print(
-        "[dim]Submit: Ctrl+J, Esc+Enter, or Ctrl+Enter (CSI-u terminals). New line: Enter. Complete: Tab.[/dim]"
+        "[dim]Submit: Ctrl+J, Esc+Enter, or Ctrl+Enter (CSI-u terminals). New line: Enter. Complete: Tab, Ctrl+D or .exit to quit[/dim]"
     )
 
     # console.print("Registered functions")

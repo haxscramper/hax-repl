@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 from time import monotonic
 from typing import Callable, List, Literal, Sequence
@@ -18,6 +19,7 @@ from hax_repl.hashing import (
     content_hash_for_prompt,
     content_hash_for_response,
     context_hash,
+    SeparatedResponseText,
     split_thinking_blocks,
 )
 from hax_repl.llm_client import (
@@ -92,7 +94,9 @@ class AppRuntime:
         app_dir = Path.home() / ".local" / "share" / "haxllm"
         sessions_dir = app_dir / "sessions"
         db_path = app_dir / "messages.sqlite3"
-        repo_root = Path(__file__).resolve().parents[2]
+        root_env = os.getenv("HAX_REPL_REPO_ROOT")
+        assert root_env
+        repo_root = Path(root_env)
         config_path = (Path(plugins_config_path).expanduser().resolve()
                        if plugins_config_path is not None else
                        (repo_root / "hax_repl.plugins.json"))
@@ -359,7 +363,7 @@ class AppRuntime:
         )
         response = self.send_prompt(
             prompt,
-            on_visible_token=on_visible_token,
+            on_chunk=on_visible_token,
             on_function_call_decision=on_function_call_decision,
         )
 
@@ -401,6 +405,7 @@ class AppRuntime:
                     content=completion.text,
                     tool_calls=completion.tool_calls,
                 ))
+
             for tool_call in completion.tool_calls:
                 request = FunctionCallRequest(name=tool_call.name,
                                               arguments_json=tool_call.arguments_json)
@@ -412,6 +417,7 @@ class AppRuntime:
                                                              decision=decision)
                 all_results.append(
                     FunctionCallResult(name=tool_call.name, result_json=result_json))
+
                 messages.append(
                     ChatMessage(
                         role="tool",
@@ -471,7 +477,7 @@ class AppRuntime:
     def send_prompt(
         self,
         original_prompt: str,
-        on_visible_token: Callable[[str], None] | None = None,
+        on_chunk: Callable[[SeparatedResponseText], None] | None = None,
         on_function_call_decision: Callable[[FunctionCallRequest], FunctionCallDecision] |
         None = None,
     ) -> RuntimeResponse:
@@ -533,8 +539,9 @@ class AppRuntime:
             split = split_thinking_blocks(completion_result.text)
             visible_text = split.visible_text.strip()
             thinking_text = split.thinking_text.strip()
-            if on_visible_token is not None and visible_text:
-                on_visible_token(visible_text)
+            if on_chunk is not None and visible_text:
+                on_chunk(split)
+
         else:
             raw_full_text = ""
             visible_so_far = ""
@@ -542,17 +549,22 @@ class AppRuntime:
             for chunk in self._client.stream_chat(llm_messages):
                 if first_token_at is None:
                     first_token_at = monotonic()
+
                 raw_full_text += chunk
                 split = split_thinking_blocks(raw_full_text)
                 visible_delta = split.visible_text[len(visible_so_far):]
                 thinking_so_far = split.thinking_text
                 visible_so_far = split.visible_text
-                if visible_delta and on_visible_token is not None:
+
+                if visible_delta and on_chunk is not None:
                     if first_visible_token_at is None:
                         first_visible_token_at = monotonic()
-                    on_visible_token(visible_delta)
+
+                    on_chunk(split)
+
                 elif visible_delta and first_visible_token_at is None:
                     first_visible_token_at = monotonic()
+
             visible_text = visible_so_far.strip()
             thinking_text = thinking_so_far.strip()
 
@@ -711,6 +723,6 @@ class AppRuntime:
 
         return self.send_prompt(
             last_prompt.original_prompt,
-            on_visible_token=on_visible_token,
+            on_chunk=on_visible_token,
             on_function_call_decision=on_function_call_decision,
         )

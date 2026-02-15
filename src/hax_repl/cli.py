@@ -52,8 +52,10 @@ def main() -> None:
         model_name=args.model,
         plugins_config_path=args.plugins_config,
     )
+
     logging.getLogger(__name__).info("Starting hax-repl session=%s log_file=%s",
                                      args.session, log_file)
+
     run_repl(runtime)
 
 

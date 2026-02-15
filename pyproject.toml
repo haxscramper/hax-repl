@@ -29,6 +29,7 @@ packages = ["src/hax_repl"]
 [dependency-groups]
 dev = [
     "isort>=7.0.0",
+    "pex>=2.89.1",
 ]
 
 
