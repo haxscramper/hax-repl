@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -21,6 +22,8 @@ from rich.syntax import Syntax
 from hax_repl.hashing import SeparatedResponseText
 from hax_repl.models import FunctionCallRequest
 from hax_repl.runtime import AppRuntime, FunctionCallDecision, RuntimeResponse
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,6 +83,11 @@ def _parse_command(raw: str) -> list[str]:
         return shlex.split(raw)
     except ValueError:
         return raw.split()
+
+
+def _print_result(console: Console, query_index: int):
+    console.print(f"[red]RESULT [{query_index}]:[/red]")
+    console.print("")
 
 
 def _build_repl_click_group() -> click.Group:
@@ -161,7 +169,7 @@ def _build_repl_click_group() -> click.Group:
                     if not first_visible_token_seen:
                         first_visible_token_seen = True
                         status.stop()
-                        state.console.print(f"[red]RESULT [{query_index}]:[/red]")
+                        _print_result(state.console, query_index)
 
                 runtime_response = state.runtime.generate_again(
                     on_visible_token=_on_visible_token,
@@ -182,7 +190,7 @@ def _build_repl_click_group() -> click.Group:
 
             return
         if not first_visible_token_seen:
-            state.console.print(f"[red]RESULT [{query_index}]:[/red]")
+            _print_result(state.console, query_index)
 
         _render_runtime_response(
             runtime=state.runtime,
@@ -691,16 +699,6 @@ def _render_runtime_response(
     runtime_response: RuntimeResponse,
 ) -> None:
     "Format statistics about the model and query processing time."
-    console.print("[dim]" + " | ".join([
-        f"stats: model={runtime.model_name}",
-        f"session={runtime.session.session.value}",
-        f"prompt_chars={len(prompt_text)}",
-        f"total={runtime_response.stats.elapsed_ms} ms",
-        f"first_token={runtime_response.stats.time_until_first_token_ms} ms",
-        f"thinking={runtime_response.stats.model_thinking_ms} ms",
-        f"query_chars={runtime_response.stats.query_chars}",
-        f"response_chars={runtime_response.stats.response_chars}",
-    ]) + "[/dim]")
 
     visible_text = runtime_response.response_message.text
 
@@ -715,6 +713,17 @@ def _render_runtime_response(
 
     else:
         console.print("[dim](empty response)[/dim]")
+
+    LOGGER.info("".join([
+        f"stats: model={runtime.model_name}",
+        f"session={runtime.session.session.value}",
+        f"prompt_chars={len(prompt_text)}",
+        f"total={runtime_response.stats.elapsed_ms} ms",
+        f"first_token={runtime_response.stats.time_until_first_token_ms} ms",
+        f"thinking={runtime_response.stats.model_thinking_ms} ms",
+        f"query_chars={runtime_response.stats.query_chars}",
+        f"response_chars={runtime_response.stats.response_chars}",
+    ]))
 
 
 def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int,
@@ -741,7 +750,7 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
                 if not first_visible_token_seen and response.visible_text:
                     first_visible_token_seen = True
                     status.stop()  # stops the spinner/live status
-                    console.print(f"[red]RESULT [{query_index}]:[/red]")
+                    _print_result(console, query_index)
 
             runtime_response = runtime.send_prompt(
                 prompt_text,
@@ -759,7 +768,7 @@ def _run_streaming_query(runtime: AppRuntime, console: Console, query_index: int
         return False
 
     if not first_visible_token_seen:
-        console.print(f"[red]RESULT [{query_index}]:[/red]")
+        _print_result(console, query_index)
 
     _render_runtime_response(
         runtime=runtime,
@@ -806,7 +815,7 @@ def _run_agent_step(runtime: AppRuntime, console: Console) -> bool:
                 if not first_visible_token_seen:
                     first_visible_token_seen = True
                     status.stop()
-                    console.print(f"[red]RESULT [{query_index}]:[/red]")
+                    _print_result(console, query_index)
 
             runtime_response = runtime.run_agent_step(
                 on_visible_token=_on_visible_token,
@@ -824,8 +833,10 @@ def _run_agent_step(runtime: AppRuntime, console: Console) -> bool:
     if runtime_response is None:
         console.print("[yellow]Agent did not run a step.[/yellow]")
         return True
+
     if not first_visible_token_seen:
-        console.print(f"[red]RESULT [{query_index}]:[/red]")
+        _print_result(console, query_index)
+
     _render_runtime_response(
         runtime=runtime,
         console=console,
@@ -869,24 +880,23 @@ def run_repl(runtime: AppRuntime) -> None:
     prompt_session = _build_prompt_session(COMMAND_PHRASES)
     pending_includes: list[str] = []
 
-    console.print(
-        "[dim]Submit: Ctrl+J, Esc+Enter, or Ctrl+Enter (CSI-u terminals). New line: Enter. Complete: Tab, Ctrl+D or .exit to quit[/dim]"
-    )
-
-    # console.print("Registered functions")
-    # for f in runtime._function_registry.all_specs():
-    #     console.print(f"  {f.name} {f.description}")
+    # console.print(
+    #     "[dim]Submit: Ctrl+J, Esc+Enter, or Ctrl+Enter (CSI-u terminals). New line: Enter. Complete: Tab, Ctrl+D or .exit to quit[/dim]"
+    # )
 
     while True:
         query_index = runtime.next_query_index()
-        console.print(f"[cyan]{runtime.prompt_state_label}[/cyan]")
+        console.print(
+            f"[green]{runtime.prompt_state_label} [dim]QUERY \\[{query_index}][/dim][/green]"
+        )
+
         try:
             default_text = ""
             if pending_includes:
                 default_text = "\n\n".join(pending_includes) + "\n\n"
             prompt_text = prompt_session.prompt(
-                ANSI(f"\x1b[32mQUERY [{query_index}]: \x1b[0m"),
-                multiline=True,
+                "",
+                multiline=False,
                 default=default_text,
             )
 
